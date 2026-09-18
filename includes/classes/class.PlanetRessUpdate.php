@@ -80,6 +80,7 @@ class ResourceUpdate
 		$Hash[]	= $this->USER[$resource[131]];
 		$Hash[]	= $this->USER[$resource[132]];
 		$Hash[]	= $this->USER[$resource[133]];
+		$Hash[]	= $this->PLANET[$resource[239]];
 		return md5(implode("::", $Hash));
 	}
 	
