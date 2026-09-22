@@ -1,6 +1,8 @@
 <?php
 
-class TelemetryCronjob
+require_once ROOT_PATH . 'includes/classes/cronjob/CronjobTask.interface.php';
+
+class TelemetryCronjob implements CronjobTask
 {
     public function run()
     {

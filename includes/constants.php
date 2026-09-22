@@ -158,7 +158,7 @@ define('AUTH_MOD'					, 1);
 define('AUTH_USR'					, 0);
 
 // Modules
-define('MODULE_AMOUNT'				, 43);
+define('MODULE_AMOUNT'				, 44);
 define('MODULE_ALLIANCE'			, 0);
 define('MODULE_BANLIST'				, 21);
 define('MODULE_BANNER'				, 37);
@@ -200,6 +200,7 @@ define('MODULE_SHORTCUTS'			, 41);
 define('MODULE_SIMULATOR'			, 39);
 define('MODULE_STATISTICS'			, 25);
 define('MODULE_SUPPORT'				, 27);
+define('MODULE_TELEMETRY'			, 43);
 define('MODULE_TECHTREE'			, 28);
 define('MODULE_TRADER'				, 13);
 

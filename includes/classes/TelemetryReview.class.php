@@ -6,11 +6,6 @@ final class TelemetryReview
     {
     }
 
-    public static function allowed(array $user, $session): bool
-    {
-        return ($user['authlevel'] ?? 0) >= AUTH_MOD && (int) $session->adminAccess === 1;
-    }
-
     public function evaluate(int $universe, array $s, int $now, int $cursor = 0, int $pairA = 0, int $pairB = 0): array
     {
         $started = microtime(true);
@@ -210,30 +205,8 @@ final class TelemetryReview
             throw $e;
         }
         $this->store->query("UPDATE telemetry_audit SET action='settings' WHERE universe=? AND id=?", [$universe, $id]);
-        if (isset($changed['enabled']) || isset($changed['events_enabled'])) {
-            TelemetryStore::health(static function (array $health) use ($now, $values, $universe): array {
-                $state = [
-                    'settings_changed_at' => $now,
-                    'collection_enabled' => $values['enabled'],
-                    'events_enabled' => $values['events_enabled'],
-                ];
-                foreach (['enabled' => 'disabled', 'events_enabled' => 'events_disabled'] as $setting => $reason) {
-                    $key = $reason . '_since_' . $universe;
-                    if (!$values[$setting]) {
-                        $state[$key] = $health[$key] ?? $now;
-                    } elseif (isset($health[$key])) {
-                        $state['gaps'] = array_slice(
-                            array_merge(
-                                $state['gaps'] ?? $health['gaps'],
-                                [['from' => $health[$key], 'to' => $now, 'reason' => $reason, 'universe' => $universe]]
-                            ),
-                            -200
-                        );
-                        $state[$key] = null;
-                    }
-                }
-                return $state;
-            });
+        if (isset($changed['events_enabled'])) {
+            TelemetryStore::switchChanged($universe, 'events_disabled', (bool)$values['events_enabled'], $now);
         }
     }
 

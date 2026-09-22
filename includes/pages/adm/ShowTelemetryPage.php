@@ -7,9 +7,11 @@ function ShowTelemetryPage()
 {
     global $USER;
     $session = Session::load();
-    if (!TelemetryReview::allowed($USER, $session)) {
+    if (!allowedTo('ShowTelemetryPage') || $session->adminAccess != 1) {
         http_response_code(403);
-        throw new RuntimeException('Accès modérateur requis.');
+        $template = new template();
+        $template->message('Accès modérateur requis.');
+        return;
     }
     $universe = (int) Universe::getEmulated();
     $now = time();
@@ -19,24 +21,30 @@ function ShowTelemetryPage()
     }
     $session->telemetryToken ??= bin2hex(random_bytes(32));
     $token = $session->telemetryToken;
+    $timezoneName = HTTP::_GP('timezone', $session->telemetryTimezone ?? 'Europe/Paris');
+    if (!in_array($timezoneName, DateTimeZone::listIdentifiers(), true)) {
+        $timezoneName = 'Europe/Paris';
+    }
+    $timezone = new DateTimeZone($timezoneName);
+    $session->telemetryTimezone = $timezoneName;
     $session->save();
     $message = '';
     $error = '';
     $warnings = [];
+    $accounts = [];
+    $names = [];
+    $actor = max(0, (int) ($_GET['account'] ?? 0));
+    $id = max(0, (int) ($_GET['id'] ?? $_POST['id'] ?? 0));
     $case = null;
     $account = [];
     $analysis = null;
     $settingsHistory = [];
+    $showSettings = ($_GET['view'] ?? '') === 'settings' || ($_POST['action'] ?? '') === 'settings';
     $status = $_GET['status'] ?? 'open';
     if (!in_array($status, ['open', 'follow_up', 'dismissed'], true)) {
         $status = 'open';
     }
     $s = TelemetrySettings::get($universe);
-    try {
-        $timezone = new DateTimeZone($USER['timezone'] ?: 'UTC');
-    } catch (Exception $e) {
-        $timezone = new DateTimeZone('UTC');
-    }
     $view = new TelemetryPresentation($timezone);
     $format = static fn($at) => $view->date((int) $at);
     try {
@@ -48,7 +56,16 @@ function ShowTelemetryPage()
             }
             $action = $_POST['action'] ?? '';
             if ($action === 'settings') {
-                $review->saveSettings($universe, (int) $USER['id'], $_POST['settings'] ?? [], $now);
+                $input = $_POST['settings'] ?? [];
+                if (!is_array($input)) {
+                    throw new InvalidArgumentException('Réglages invalides.');
+                }
+                foreach (TelemetrySettings::definitions() as $name => $definition) {
+                    if ($definition[4] === 'fraction' && is_numeric($input[$name] ?? null)) {
+                        $input[$name] = (float) $input[$name] / 100;
+                    }
+                }
+                $review->saveSettings($universe, (int) $USER['id'], $input, $now);
                 $s = TelemetrySettings::get($universe);
                 $message = 'Réglages enregistrés.';
             } elseif ($action === 'review') {
@@ -63,7 +80,6 @@ function ShowTelemetryPage()
                 $message = 'Décision enregistrée.';
             }
         }
-        $id = max(0, (int) ($_GET['id'] ?? $_POST['id'] ?? 0));
         if ($id) {
             $case = $review->refresh($universe, $id, $s, $now);
             $case['formatted_first'] = $format($case['first_seen']);
@@ -79,14 +95,18 @@ function ShowTelemetryPage()
                 $evidence = $case[$key];
                 $thresholds = [];
                 foreach ($case[$key === 'evidence' ? 'settings' : 'latest_settings'] as $name => $value) {
-                    $definition = TelemetrySettings::definitions()[$name];
-                    $thresholds[] = ['label' => $definition[5], 'value' => $value . ' ' . $definition[4]];
+                    $definition = TelemetrySettings::definitions()[$name] ?? null;
+                    if ($definition === null) {
+                        continue;
+                    }
+                    $thresholds[] = ['label' => $definition[5], 'value' => TelemetryPresentation::setting($name, $value)];
                 }
                 $case['evaluations'][] = [
                     'label' => $label,
                     'date' => $format($evidence['evaluated_at'] ?? $case['first_seen']),
                     'matches' => $evidence['matches'] ?? true,
                     'support' => array_map([TelemetryPresentation::class, 'label'], array_diff($evidence['supporting_checks'] ?? [], [$case['kind']])),
+                    'exchange' => $view->exchange($evidence['metrics']),
                     'metrics' => $view->rows($evidence['metrics']),
                     'thresholds' => $thresholds,
                     'timeline' => $view->timeline($evidence['timeline']),
@@ -104,7 +124,6 @@ function ShowTelemetryPage()
             }
             unset($entry);
         }
-        $actor = max(0, (int) ($_GET['account'] ?? 0));
         if ($actor) {
             $other = max(0, (int) ($_GET['other'] ?? 0));
             if ($other === $actor) {
@@ -162,7 +181,7 @@ function ShowTelemetryPage()
             $account['gaps'] = $view->gaps(TelemetryStore::interruptions($universe, $from, $now, false));
             $account['event_gaps'] = $view->gaps(TelemetryStore::interruptions($universe, $eventFrom, $now));
         }
-        if (!$id && !$actor) {
+        if (!$id && !$actor && !$showSettings) {
             $analysis = $review->evaluate(
                 $universe,
                 $s,
@@ -173,10 +192,57 @@ function ShowTelemetryPage()
             );
         }
         $before = max(1, (int) ($_GET['before'] ?? PHP_INT_MAX));
-        $warnings = $store->query(
-            'SELECT id,actor,other,kind,strength,explanation,observation_start,observation_end,status FROM telemetry_warnings WHERE universe=? AND status=? AND id<? ORDER BY id DESC LIMIT 51',
-            [$universe, $status, $before]
-        )->fetchAll(PDO::FETCH_ASSOC);
+        if ($actor) {
+            $warnings = $store->query(
+                'SELECT id,actor,other,kind,strength,explanation,observation_start,observation_end,status FROM telemetry_warnings WHERE universe=? AND (actor=? OR other=?) AND id<? ORDER BY id DESC LIMIT 51',
+                [$universe, $actor, $actor, $before]
+            )->fetchAll(PDO::FETCH_ASSOC);
+        } elseif (!$id && !$showSettings) {
+            $accounts = $store->query(
+                'SELECT account,COUNT(*) AS total,GROUP_CONCAT(DISTINCT kind ORDER BY kind) AS kinds,MAX(observation_end) AS last_seen FROM (
+                    SELECT actor AS account,kind,observation_end FROM telemetry_warnings WHERE universe=? AND status=?
+                    UNION ALL
+                    SELECT other AS account,kind,observation_end FROM telemetry_warnings WHERE universe=? AND status=? AND other>0 AND other<>actor
+                ) AS warnings WHERE account<? GROUP BY account ORDER BY account DESC LIMIT 51',
+                [$universe, $status, $universe, $status, $before]
+            )->fetchAll(PDO::FETCH_ASSOC);
+        }
+        $accountIds = array_merge(array_column($accounts, 'account'), array_column($account['players'] ?? [], 'id'));
+        $events = $account['events'] ?? [];
+        foreach ($case['evaluations'] ?? [] as $evaluation) {
+            $events = array_merge($events, $evaluation['timeline']);
+        }
+        foreach ($events as $event) {
+            $accountIds[] = $event['actor'] ?? 0;
+            $accountIds[] = $event['target'] ?? 0;
+        }
+        foreach ($warnings as $warning) {
+            $accountIds[] = $warning['actor'];
+            $accountIds[] = $warning['other'];
+        }
+        if ($case) {
+            $accountIds[] = $case['actor'];
+            $accountIds[] = $case['other'];
+        }
+        $accountIds = array_unique(array_filter(array_map('intval', $accountIds)));
+        if ($accountIds) {
+            $players = Database::get()->select(
+                'SELECT id,username FROM %%USERS%% WHERE universe=:universe AND id IN (' . implode(',', $accountIds) . ')',
+                [':universe' => $universe]
+            );
+            foreach ($players as $player) {
+                $names[$player['id']] = $player['username'] . ' (' . $player['id'] . ')';
+            }
+            foreach ($accountIds as $accountId) {
+                $names[$accountId] ??= 'Compte supprimé (' . $accountId . ')';
+            }
+        }
+        foreach ($accounts as &$row) {
+            $row['name'] = $names[$row['account']];
+            $row['kinds'] = implode(', ', array_map([TelemetryPresentation::class, 'label'], explode(',', $row['kinds'])));
+            $row['date'] = $format($row['last_seen']);
+        }
+        unset($row);
         foreach ($warnings as &$warning) {
             $warning['kind_label'] = TelemetryPresentation::label($warning['kind']);
             $warning['strength_label'] = TelemetryPresentation::label($warning['strength']);
@@ -187,7 +253,13 @@ function ShowTelemetryPage()
         $settingsHistory = $store->query("SELECT admin,at,data FROM telemetry_audit WHERE universe=? AND action='settings' ORDER BY at DESC LIMIT 20", [$universe])->fetchAll(PDO::FETCH_ASSOC);
         foreach ($settingsHistory as &$entry) {
             $entry['date'] = $format($entry['at']);
-            $entry['changes'] = $view->rows(json_decode($entry['data'], true));
+            $entry['changes'] = [];
+            foreach (json_decode($entry['data'], true) as $name => $change) {
+                $entry['changes'][] = [
+                    'label' => TelemetryPresentation::label($name),
+                    'value' => TelemetryPresentation::setting($name, $change['before']) . ' → ' . TelemetryPresentation::setting($name, $change['after']),
+                ];
+            }
         }
         unset($entry);
     } catch (Throwable $e) {
@@ -208,13 +280,15 @@ function ShowTelemetryPage()
     }
     $fields = [];
     foreach (TelemetrySettings::definitions() as $key => $d) {
+        $scale = $d[4] === 'fraction' ? 100 : 1;
         $fields[$d[0]][] = [
             'key' => $key,
-            'value' => $s[$key],
-            'default' => $d[1],
-            'min' => $d[2],
-            'max' => $d[3],
-            'unit' => $d[4],
+            'value' => $s[$key] * $scale,
+            'default' => $d[1] * $scale,
+            'min' => $d[2] * $scale,
+            'max' => $d[3] * $scale,
+            'unit' => $scale === 100 ? '%' : $d[4],
+            'checkbox' => $d[4] === '0/1',
             'label' => $d[5],
             'help' => $d[6],
             'step' => is_int($d[1]) ? '1' : 'any',
@@ -225,10 +299,13 @@ function ShowTelemetryPage()
         'telemetryMessage' => $message,
         'telemetryError' => $error,
         'telemetryWarnings' => array_slice($warnings, 0, 50),
-        'telemetryNext' => count($warnings) > 50 ? $warnings[49]['id'] : 0,
+        'telemetryAccounts' => array_slice($accounts, 0, 50),
+        'telemetryNames' => $names,
+        'telemetryNext' => count($warnings) > 50 ? $warnings[49]['id'] : (count($accounts) > 50 ? $accounts[49]['account'] : 0),
         'telemetryCase' => $case,
         'telemetryAccount' => $account,
-        'telemetryShowSettings' => ($_GET['view'] ?? '') === 'settings' || ($_POST['action'] ?? '') === 'settings',
+        'telemetryShowSettings' => $showSettings,
+        'telemetryEnabled' => (bool) $s['enabled'],
         'telemetryMaxDays' => $s['daily_days'],
         'telemetryFields' => $fields,
         'telemetryToken' => $token,
@@ -238,8 +315,9 @@ function ShowTelemetryPage()
         'telemetrySettingsHistory' => $settingsHistory,
         'telemetryGaps' => $view->gaps(TelemetryStore::interruptions($universe, $now - $s['daily_days'] * 86400, $now)),
         'telemetryMaster' => TelemetryConnection::masterEnabled(),
+        'telemetryTimezones' => ['UTC' => 'UTC'] + get_timezone_selector(),
         'telemetryTimezone' => $timezone->getName(),
-        'telemetryGroups' => ['activity' => 'Activité', 'automation' => 'Automatisation', 'pushing' => 'Échanges', 'storage' => 'Stockage'],
+        'telemetryGroups' => ['collection' => 'Collecte', 'activity' => 'Longues périodes d’activité', 'automation' => 'Actions répétées', 'pushing' => 'Échanges de ressources', 'storage' => 'Conservation', 'advanced' => 'Réglages avancés'],
     ]);
     $template->show('TelemetryPage.tpl');
 }

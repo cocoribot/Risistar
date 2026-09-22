@@ -26,7 +26,9 @@ if ($op==='state') {
         if ($pid>1) {exec('kill '.(int)$pid);}
         unlink('/tmp/telemetry-fault-pid');
     }
-    $settings=TelemetrySettings::defaults();$settings['enabled']=$mode==='disabled'?0:1;
+    $settings=TelemetrySettings::defaults();
+    $config=Config::get(1);$modules=array_pad(explode(';',$config->moduls),MODULE_AMOUNT,1);
+    $modules[MODULE_TELEMETRY]=$mode==='disabled'?0:1;$config->moduls=implode(';',$modules);
     Config::get(1)->telemetry_settings=json_encode($settings);Config::get(1)->save();
     require ROOT_PATH.'includes/config.test.php';
     if ($mode==='refused') {$telemetry['host']='127.0.0.1';$telemetry['port']=9;}
@@ -87,12 +89,27 @@ if ($op==='state') {
     $settings=TelemetrySettings::get(1);$settings['network_enabled']=$op==='network_on'?1:0;
     Config::get(1)->telemetry_settings=json_encode($settings);Config::get(1)->save();
     $out=['network_enabled'=>$settings['network_enabled']];
+} elseif ($op==='escaped_fields') {
+    $payload='<img src=x onerror=txss=1>';
+    $db->update('UPDATE %%USERS%% SET username=:name WHERE id=2',[':name'=>$payload]);
+    $s=TelemetrySettings::get(1);$now=time();
+    $store->write([event(2,$now,'interaction',0,['client'=>$payload])],[1=>$s]);
+    $store->warning(1,1,2,['kind'=>'pushing.2','strength'=>'moderate','explanation'=>$payload,
+        'from'=>$now-60,'to'=>$now,'metrics'=>[],'timeline'=>[]],$s,$now);
+    $out=['payload'=>$payload];
 } elseif ($op==='permissions') {
-    $review=new TelemetryReview($store);
-    check(!TelemetryReview::allowed(['authlevel'=>0],(object)['adminAccess'=>1]),'ordinary player denied');
-    check(!TelemetryReview::allowed(['authlevel'=>1],(object)['adminAccess'=>0]),'moderator needs admin login');
-    check(TelemetryReview::allowed(['authlevel'=>1],(object)['adminAccess'=>1]),'moderator admitted');
+    $USER=['authlevel'=>AUTH_MOD,'rights'=>[]];
+    check(!allowedTo('ShowTelemetryPage'),'moderator without permission denied');
+    $USER['rights']['ShowTelemetryPage']=1;
+    check(allowedTo('ShowTelemetryPage'),'moderator with permission admitted');
+    $USER=['authlevel'=>AUTH_ADM,'rights'=>[]];
+    check(allowedTo('ShowTelemetryPage'),'admin admitted');
     $out=['checked'=>true];
+} elseif (in_array($op,['moderator_on','moderator_grant','moderator_off'],true)) {
+    $rights=$op==='moderator_grant'?['ShowTelemetryPage'=>1]:[];
+    $db->update('UPDATE %%USERS%% SET authlevel=:level,rights=:rights WHERE id=2',
+        [':level'=>$op==='moderator_off'?AUTH_USR:AUTH_MOD,':rights'=>serialize($rights)]);
+    $out=['updated'=>true];
 } else {
     throw new InvalidArgumentException('Unknown fixture operation.');
 }

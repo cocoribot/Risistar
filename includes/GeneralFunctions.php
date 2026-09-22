@@ -407,7 +407,7 @@ function ClearCache()
 function allowedTo($side)
 {
 	global $USER;
-	return ($USER['authlevel'] == AUTH_ADM || (isset($USER['rights']) && $USER['rights'][$side] == 1));
+	return ($USER['authlevel'] == AUTH_ADM || (isset($USER['rights']) && ($USER['rights'][$side] ?? 0) == 1));
 }
 
 function isactiveDMExtra($Extra, $Time) {

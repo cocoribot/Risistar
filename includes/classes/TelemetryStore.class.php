@@ -335,6 +335,25 @@ final class TelemetryStore
         });
     }
 
+    public static function switchChanged(int $universe, string $reason, bool $enabled, int $now): void
+    {
+        self::health(static function (array $health) use ($universe, $reason, $enabled, $now): array {
+            $key = $reason . '_since_' . $universe;
+            if (!$enabled) {
+                return [$key => $health[$key] ?? $now];
+            }
+            if (!isset($health[$key])) {
+                return [];
+            }
+            return [
+                $key => null,
+                'gaps' => array_slice(array_merge($health['gaps'], [
+                    ['from' => $health[$key], 'to' => $now, 'reason' => $reason, 'universe' => $universe],
+                ]), -200),
+            ];
+        });
+    }
+
     public static function interruptions(int $universe, int $from, int $to, bool $events = true): array
     {
         $health = self::health();

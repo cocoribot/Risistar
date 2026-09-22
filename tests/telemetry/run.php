@@ -112,7 +112,17 @@ $fresh=$review->refresh(1,$id,$strict,$now+2);
 check(!$fresh['latest_evidence']['matches'] && $fresh['evidence']===$originalEvidence && $fresh['status']==='follow_up','no longer matching preserves original evidence and decision');
 require_once ROOT_PATH.'includes/classes/TelemetryPresentation.class.php';
 $view=new TelemetryPresentation(new DateTimeZone('Europe/Paris'));
+check(TelemetryPresentation::duration(73740)==='20 h 29 min' && TelemetryPresentation::duration(12660)==='3 h 31 min','long durations use hours minutes seconds');
+check(TelemetryPresentation::duration(65)==='1 min 5 s' && TelemetryPresentation::duration(5)==='5 s' && TelemetryPresentation::duration(90000)==='1 j 1 h','short durations and totals retain their precision');
+check(TelemetryPresentation::duration(0)==='0 s' && TelemetryPresentation::duration(1380)==='23 min','daily durations explicitly distinguish zero and minutes');
+$durationRows=$view->rows(['active_seconds'=>73740,'largest_gap_seconds'=>12660,'seconds'=>[65,120]]);
+check(array_column($durationRows,'value')===['20 h 29 min','3 h 31 min','1 min 5 s → 2 min'],'evidence durations use the same readable format');
 check(count($view->timeline($availability[0]['timeline'])[0]['details'])===4,'availability warning retains and renders its activity windows');
+$exchange=$view->exchange($partial['metrics']);
+check(count($exchange['summary'])===5 && $exchange['summary'][2]['value']==='25 %','exchange shows a compact summary with readable tolerance');
+check(!str_contains($exchange['summary'][3]['value'],'→') && str_contains($exchange['summary'][3]['value'],':'),'exchange rate uses M:C:D notation');
+check(count($exchange['resources'])===2,'identical due and total deliveries are not repeated');
+check($view->rows(['metal'=>5000000])[0]['value']===pretty_number(5000000),'resources use the game number format');
 $from=strtotime('2026-09-18 00:00:00 Europe/Paris');
 $to=strtotime('2026-09-20 23:59:59 Europe/Paris');
 $activity=$view->activity([

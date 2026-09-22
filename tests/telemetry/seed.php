@@ -56,7 +56,10 @@ $migration($db);
 $db->update('UPDATE %%SYSTEM%% SET dbVersion=8');
 Config::reload();
 $cfg=Config::get(1);
-$settings=TelemetrySettings::defaults();$settings['enabled']=1;
+$settings=TelemetrySettings::defaults();
+if (TelemetrySettings::get(1)['enabled'] !== 0) { throw new RuntimeException('Telemetry module must default to off.'); }
+$modules=array_pad(explode(';',$cfg->moduls),MODULE_AMOUNT,1);$modules[MODULE_TELEMETRY]=1;
+$cfg->moduls=implode(';',$modules);
 $cfg->telemetry_settings=json_encode($settings);
 $cfg->lang='fr';$cfg->timezone='UTC';$cfg->game_disable=1;
 $cfg->save();

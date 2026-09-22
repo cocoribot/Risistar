@@ -13,10 +13,24 @@ final class TelemetryPresentation
 
     public static function duration(int $seconds): string
     {
-        $hours = intdiv($seconds, 3600);
-        $minutes = intdiv($seconds % 3600, 60);
-        $rest = $seconds % 60;
-        return ($hours ? $hours . ' h ' : '') . $minutes . ' min' . ($rest ? ' ' . $rest . ' s' : '');
+        $parts = [];
+        foreach ([86400 => 'j', 3600 => 'h', 60 => 'min', 1 => 's'] as $unit => $label) {
+            $value = intdiv($seconds, $unit);
+            if ($value > 0) {
+                $parts[] = $value . ' ' . $label;
+            }
+            $seconds %= $unit;
+        }
+        return $parts ? implode(' ', $parts) : '0 s';
+    }
+
+    public static function setting(string $key, $value): string
+    {
+        $unit = TelemetrySettings::definitions()[$key][4] ?? '';
+        if ($unit === '0/1' || $key === 'enabled') {
+            return $value ? 'Activé' : 'Désactivé';
+        }
+        return $unit === 'fraction' ? round($value * 100, 3) . ' %' : trim($value . ' ' . $unit);
     }
 
     public function activity(array $daily, int $from, int $to): array
@@ -68,6 +82,7 @@ final class TelemetryPresentation
     public static function label(string $key): string
     {
         $labels = [
+            'enabled' => 'Collecte',
             'availability' => 'Amplitude d’activité',
             'timing' => 'Rythme régulier',
             'workflow' => 'Séquence répétée',
@@ -95,20 +110,20 @@ final class TelemetryPresentation
             'combat' => 'Combat',
             'days' => 'Jours',
             'day' => 'Jour',
-            'active_seconds' => 'Durée active estimée (s)',
+            'active_seconds' => 'Durée active estimée',
             'windows' => 'Fenêtres d’activité',
-            'largest_gap_seconds' => 'Plus grand intervalle (s)',
+            'largest_gap_seconds' => 'Plus grand intervalle',
             'short_gap_days' => 'Jours aux intervalles courts',
             'required_days' => 'Jours requis',
             'share' => 'Proportion',
             'period' => 'Intervalles par motif',
-            'seconds' => 'Durées (s)',
+            'seconds' => 'Durées',
             'observations' => 'Observations',
             'repeats' => 'Répétitions',
             'pattern' => 'Séquence',
             'starts' => 'Débuts des répétitions',
             'checks' => 'Consultations',
-            'span_seconds' => 'Période couverte (s)',
+            'span_seconds' => 'Période couverte',
             'consecutive_systems' => 'Systèmes consécutifs',
             'sender' => 'Expéditeur',
             'recipient' => 'Destinataire',
@@ -156,6 +171,38 @@ final class TelemetryPresentation
         return $labels[$key] ?? TelemetrySettings::definitions()[$key][5] ?? $key;
     }
 
+    public function exchange(array $metrics): ?array
+    {
+        if (!isset($metrics['sent'], $metrics['balance'], $metrics['total_balance'])) {
+            return null;
+        }
+        $resources = [];
+        foreach (['sent' => 'Envoyé', 'returned' => 'Reçu en retour', 'overdue_sent' => 'Dont arrivé à échéance'] as $key => $label) {
+            if ($key === 'overdue_sent' && $metrics[$key] == $metrics['sent']) {
+                continue;
+            }
+            $row = ['label' => $label];
+            foreach (['metal', 'crystal', 'deuterium'] as $resource) {
+                $row[$resource] = pretty_number($metrics[$key][$resource] ?? 0);
+            }
+            $resources[] = $row;
+        }
+        $pending = !empty($metrics['awaiting_repayment']);
+        $balance = $metrics[$pending ? 'total_balance' : 'balance'];
+        return [
+            'sender' => (int) $metrics['sender'],
+            'recipient' => (int) $metrics['recipient'],
+            'resources' => $resources,
+            'summary' => [
+                ['label' => $pending ? 'Bénéfice en attente après tolérance' : 'Bénéfice non remboursé après tolérance', 'value' => pretty_number($balance['remaining']) . ' équiv. deut.'],
+                ['label' => 'Seuil de signalement', 'value' => pretty_number($metrics['minimum']) . ' équiv. deut.'],
+                ['label' => 'Tolérance', 'value' => round($metrics['allowance'] * 100, 3) . ' %'],
+                ['label' => 'Taux retenu M:C:D', 'value' => implode(':', $balance['rate'])],
+                ['label' => 'Échéance', 'value' => $this->date((int) $metrics['deadline'])],
+            ],
+        ];
+    }
+
     public function rows(array $data, string $prefix = '', bool $dates = false): array
     {
         $rows = [];
@@ -172,19 +219,29 @@ final class TelemetryPresentation
                 continue;
             }
             if (is_array($value)) {
-                if (in_array($key, ['rate', 'pattern', 'seconds'], true)) {
+                if ($key === 'seconds') {
+                    $value = implode(' → ', array_map([self::class, 'duration'], $value));
+                } elseif ($key === 'rate') {
+                    $value = implode(':', $value);
+                } elseif ($key === 'pattern') {
                     $value = implode(' → ', array_map(static fn($v) => is_string($v) ? self::label(rtrim($v, ':')) : $v, $value));
                 } else {
                     $rows = array_merge($rows, $this->rows($value, $label, $key === 'starts'));
                     continue;
                 }
             }
-            if (($dates || in_array($key, ['deadline'], true)) && $value) {
+            if (in_array($key, ['active_seconds', 'largest_gap_seconds', 'span_seconds'], true) && is_numeric($value)) {
+                $value = self::duration((int) $value);
+            } elseif (($dates || in_array($key, ['deadline'], true)) && $value) {
                 $value = $this->date((int) $value);
             } elseif (is_bool($value)) {
                 $value = $value ? 'Oui' : 'Non';
             } elseif ($value === null) {
                 $value = '—';
+            } elseif (in_array($key, ['share', 'allowance'], true) && is_numeric($value)) {
+                $value = round($value * 100, 3) . ' %';
+            } elseif (in_array($key, ['metal', 'crystal', 'deuterium', 'remaining', 'minimum', 'sent_value', 'returned_value', 'observations', 'repeats', 'checks'], true) && is_numeric($value)) {
+                $value = pretty_number($value);
             } elseif (is_float($value)) {
                 $value = round($value, 3);
             }

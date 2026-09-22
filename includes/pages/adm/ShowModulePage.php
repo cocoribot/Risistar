@@ -23,12 +23,21 @@ function ShowModulePage()
 
 	$config	= Config::get(Universe::getEmulated());
 	$module	= explode(';', $config->moduls);
+	$module[MODULE_TELEMETRY] = $module[MODULE_TELEMETRY] ?? 0;
+	$module = array_replace(array_fill(0, MODULE_AMOUNT, 1), $module);
 	
 	$mode = HTTP::_GP('mode', '');
 	if(!empty($mode)) {
-		$module[HTTP::_GP('id', 0)]	= ($mode == 'aktiv') ? 1 : 0;
+		$id = HTTP::_GP('id', -1);
+		if (HTTP::_GP('sid', '') !== session_id() || $id < 0 || $id >= MODULE_AMOUNT) {
+			throw new Exception("Permission error!");
+		}
+		$module[$id] = ($mode == 'aktiv') ? 1 : 0;
 		$config->moduls = implode(";", $module);
 		$config->save();
+		if ($id === MODULE_TELEMETRY) {
+			TelemetryStore::switchChanged((int)Universe::getEmulated(), 'disabled', (bool)$module[$id], time());
+		}
 		ClearCache();
 	}
 	
@@ -44,6 +53,7 @@ function ShowModulePage()
 	$template	= new template();
 
 	$template->assign_vars(array(
+		'sid' => session_id(),
 		'Modules'				=> $Modules,
 		'mod_module'			=> $LNG['mod_module'],
 		'mod_info'				=> $LNG['mod_info'],

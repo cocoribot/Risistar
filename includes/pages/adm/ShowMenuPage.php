@@ -20,8 +20,7 @@ function ShowMenuPage()
 	global $USER;
 	$template	= new template();
 	
-	$template->assign_vars(array(
-		'telemetryAccess' => $USER['authlevel'] >= AUTH_MOD && Session::load()->adminAccess == 1,
+	$template->assign_vars(array(	
 		'supportticks'	=> $GLOBALS['DATABASE']->getFirstCell("SELECT COUNT(*) FROM ".TICKETS." WHERE universe = ".Universe::getEmulated()." AND status = 0;"),
 	));
 	

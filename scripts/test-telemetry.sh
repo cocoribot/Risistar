@@ -3,7 +3,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export TELEMETRY_TEST_COPY TELEMETRY_TEST_PASSWORD
 TELEMETRY_TEST_PASSWORD="$(openssl rand -hex 24)"
-TELEMETRY_TEST_COPY="$(mktemp -d /tmp/risistar-telemetry.XXXXXX)"
+mkdir -p logs
+TELEMETRY_TEST_COPY="$(mktemp -d "$PWD/logs/telemetry-test.XXXXXX")"
 printf 'Isolated test copy: %s\n' "$TELEMETRY_TEST_COPY"
 tar --exclude=.git --exclude=.agents --exclude=.codex --exclude=vendor --exclude=logs --exclude='./cache/*' --exclude='./includes/config.php*' --exclude=includes/config.test.php --exclude=includes/error.log --exclude='./includes/backups/*' -cf - . | tar -xf - -C "$TELEMETRY_TEST_COPY"
 compose=(docker compose -f "$PWD/docker/telemetry/compose.yml")

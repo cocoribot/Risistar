@@ -6,40 +6,39 @@ final class TelemetrySettings
     public static function definitions(): array
     {
         return [
-            'enabled' => ['storage', 0, 0, 1, '0/1', 'Collecte', 'Active la collecte dans la limite de l’interrupteur du déploiement.'],
-            'events_enabled' => ['storage', 1, 0, 1, '0/1', 'Historique détaillé', 'Conserve les actions et les consultations individuelles.'],
-            'network_enabled' => ['storage', 1, 0, 1, '0/1', 'Contexte réseau', 'Conserve l’adresse IP source et le navigateur, système et type d’appareil déclarés.'],
-            'activity_days' => ['activity', 7, 2, 90, 'jours', 'Période d’activité', 'Fenêtre glissante de jours UTC terminés.'],
-            'activity_hours' => ['activity', 20, 1, 24, 'heures/jour', 'Durée active estimée', 'Durée cumulée des fenêtres d’activité sur une journée.'],
-            'activity_min_days' => ['activity', 4, 1, 90, 'jours', 'Jours requis', 'Nombre de jours atteignant la durée minimale.'],
-            'activity_gap_hours' => ['activity', 3.0, 0.25, 24, 'heures', 'Pause observée', 'Sépare les longues amplitudes des journées aux petits intervalles observés.'],
-            'automation_days' => ['automation', 7, 1, 30, 'jours', 'Période des séquences', 'Historique utilisé pour les rythmes, parcours et séquences.'],
-            'timing_min' => ['automation', 30, 8, 5000, 'actions', 'Observations de rythme', 'Minimum avant de comparer les intervalles.'],
-            'timing_tolerance' => ['automation', 0.1, 0.01, 0.5, 'fraction', 'Variation du rythme', 'Écart relatif admis dans une période répétée de 1 à 4 intervalles.'],
-            'timing_share' => ['automation', 0.8, 0.5, 1, 'fraction', 'Rythmes concordants', 'Proportion minimale des intervalles concordants.'],
-            'workflow_min' => ['automation', 8, 3, 1000, 'répétitions', 'Répétitions de la séquence', 'Séquences de 2 à 5 actions ; une action intercalée est admise.'],
-            'workflow_share' => ['automation', 0.6, 0.2, 1, 'fraction', 'Part de la séquence', 'Part des actions couverte par des répétitions disjointes.'],
-            'poll_min' => ['automation', 40, 5, 10000, 'consultations', 'Consultations répétées', 'Chaque requête est comptée, même si le contenu est inchangé.'],
-            'poll_span_hours' => ['automation', 2.0, 0.1, 168, 'heures', 'Durée des consultations', 'Étendue minimale des consultations répétées.'],
-            'traversal_min' => ['automation', 12, 4, 1000, 'systèmes', 'Parcours systématique', 'Nombre de passages consécutifs vers le système suivant ou précédent.'],
-            'push_days' => ['pushing', 7, 3, 30, 'jours', 'Période des échanges', 'Fenêtre des livraisons ; les preuves déjà signalées restent conservées.'],
-            'repayment_hours' => ['pushing', 48, 1, 168, 'heures', 'Délai de remboursement', 'Le remboursement partiel ne repousse pas l’échéance initiale.'],
-            'rate_metal_min' => ['pushing', 2, 1, 10, 'métal / deutérium', 'Taux métal minimum', 'Borne incluse du corridor de taux autorisés.'],
-            'rate_metal_max' => ['pushing', 4, 1, 10, 'métal / deutérium', 'Taux métal maximum', 'Borne incluse ; le taux le plus favorable à l’échange est retenu.'],
-            'rate_crystal_min' => ['pushing', 1, 1, 10, 'cristal / deutérium', 'Taux cristal minimum', 'Les taux métal et cristal évoluent ensemble dans le corridor.'],
-            'rate_crystal_max' => ['pushing', 2, 1, 10, 'cristal / deutérium', 'Taux cristal maximum', 'Corridor initial : 2:1:1 à 4:2:1.'],
-            'imbalance_allowance' => ['pushing', 0.25, 0, 0.75, 'fraction', 'Tolérance', 'Part du bénéfice envoyé tolérée après valorisation favorable.'],
-            'push_minimum' => ['pushing', 100000, 1, 1000000000000000.0, 'équivalent deutérium', 'Bénéfice minimum', 'Seul le bénéfice restant au-delà de la tolérance est comparé au seuil.'],
-            'push_points_fraction' => ['pushing', 0.01, 0, 1, 'fraction', 'Seuil relatif aux points', 'Points du bénéficiaire × 1000 × cette fraction, valorisés au taux métal maximal.'],
-            'moon_context_hours' => ['pushing', 6.0, 0.5, 48, 'heures', 'Contexte de combat', 'Combat proche de la livraison sur la planète concernée.'],
-            'event_days' => ['storage', 7, 1, 30, 'jours', 'Historique récent', 'Rétention réduite automatiquement lorsque le stockage approche sa limite.'],
-            'daily_days' => ['storage', 90, 7, 180, 'jours', 'Activité compacte', 'Conservation des fenêtres d’activité quotidiennes.'],
-            'closed_days' => ['storage', 90, 7, 365, 'jours', 'Dossiers classés', 'Les dossiers ouverts et leurs preuves ne sont jamais purgés automatiquement.'],
-            'budget_mb' => ['storage', 1800, 100, 1900, 'Mo', 'Budget de stockage', 'Allocation totale, index et espace libre inclus, sous la limite de l’hébergeur.'],
-            'reserve_mb' => ['storage', 200, 20, 500, 'Mo', 'Réserve', 'Suspend les événements avant de consommer cette marge.'],
-            'cleanup_rows' => ['storage', 1000, 100, 10000, 'lignes/table', 'Lot de nettoyage', 'Nombre maximal supprimé par table et par passage.'],
-            'analysis_accounts' => ['storage', 10, 1, 50, 'comptes', 'Lot d’analyse', 'Nombre de comptes et de paires examinés à chaque passage.'],
-            'analysis_events' => ['storage', 10000, 100, 50000, 'lignes/compte ou paire', 'Limite d’analyse', 'Une limite atteinte est affichée comme analyse incomplète.'],
+            'events_enabled' => ['collection', 1, 0, 1, '0/1', 'Enregistrer les actions détaillées', ''],
+            'network_enabled' => ['collection', 1, 0, 1, '0/1', 'Enregistrer les IP et profils client', 'Navigateur, système et type d’appareil.'],
+            'activity_days' => ['activity', 7, 2, 90, 'jours', 'Période analysée', 'Journées complètes en UTC.'],
+            'activity_hours' => ['activity', 20, 1, 24, 'heures/jour', 'Durée active minimale par jour', ''],
+            'activity_min_days' => ['activity', 4, 1, 90, 'jours', 'Jours requis pour un signal modéré', ''],
+            'activity_gap_hours' => ['activity', 3.0, 0.25, 24, 'heures', 'Pause maximale considérée comme courte', ''],
+            'automation_days' => ['automation', 7, 1, 30, 'jours', 'Période analysée', ''],
+            'timing_min' => ['automation', 30, 8, 5000, 'actions', 'Actions avant analyse du rythme', ''],
+            'timing_tolerance' => ['automation', 0.1, 0.01, 0.5, 'fraction', 'Variation tolérée entre les intervalles', ''],
+            'timing_share' => ['automation', 0.8, 0.5, 1, 'fraction', 'Part minimale d’intervalles réguliers', ''],
+            'workflow_min' => ['automation', 8, 3, 1000, 'répétitions', 'Répétitions minimales d’une séquence', ''],
+            'workflow_share' => ['automation', 0.6, 0.2, 1, 'fraction', 'Part minimale d’actions dans la séquence', ''],
+            'poll_min' => ['automation', 40, 5, 10000, 'consultations', 'Consultations minimales de la galaxie', ''],
+            'poll_span_hours' => ['automation', 2.0, 0.1, 168, 'heures', 'Durée minimale des consultations', ''],
+            'traversal_min' => ['automation', 12, 4, 1000, 'systèmes', 'Systèmes successifs parcourus', ''],
+            'push_days' => ['pushing', 7, 3, 30, 'jours', 'Période analysée', ''],
+            'repayment_hours' => ['pushing', 48, 1, 168, 'heures', 'Délai de remboursement', ''],
+            'rate_metal_min' => ['pushing', 2, 1, 10, 'métal / deutérium', 'Taux métal minimum', ''],
+            'rate_metal_max' => ['pushing', 4, 1, 10, 'métal / deutérium', 'Taux métal maximum', ''],
+            'rate_crystal_min' => ['pushing', 1, 1, 10, 'cristal / deutérium', 'Taux cristal minimum', ''],
+            'rate_crystal_max' => ['pushing', 2, 1, 10, 'cristal / deutérium', 'Taux cristal maximum', ''],
+            'imbalance_allowance' => ['pushing', 0.25, 0, 0.75, 'fraction', 'Déséquilibre toléré', 'Part des ressources envoyées admise sans remboursement.'],
+            'push_minimum' => ['pushing', 100000, 1, 1000000000000000.0, 'équivalent deutérium', 'Bénéfice minimum à signaler', 'Après prise en compte des remboursements et de la tolérance.'],
+            'push_points_fraction' => ['pushing', 0.01, 0, 1, 'fraction', 'Seuil relatif aux points du bénéficiaire', 'Pourcentage des points convertis en ressources. Le plus élevé des deux seuils est retenu.'],
+            'moon_context_hours' => ['pushing', 6.0, 0.5, 48, 'heures', 'Délai entre livraison et combat', 'Un combat proche peut indiquer une tentative de lune.'],
+            'event_days' => ['storage', 7, 1, 30, 'jours', 'Conserver les actions détaillées', 'Doit couvrir les périodes d’analyse des séquences et des échanges.'],
+            'daily_days' => ['storage', 90, 7, 180, 'jours', 'Conserver les fenêtres d’activité', ''],
+            'closed_days' => ['storage', 90, 7, 365, 'jours', 'Conserver les signalements classés', 'Les signalements ouverts sont conservés.'],
+            'budget_mb' => ['advanced', 1800, 100, 1900, 'Mo', 'Espace maximal de la base', 'Tables et index compris.'],
+            'reserve_mb' => ['advanced', 200, 20, 500, 'Mo', 'Espace à garder libre', 'Les actions détaillées ne sont plus enregistrées lorsque cette réserve est atteinte.'],
+            'cleanup_rows' => ['advanced', 1000, 100, 10000, 'lignes par table', 'Suppressions par passage de nettoyage', ''],
+            'analysis_accounts' => ['advanced', 10, 1, 50, 'comptes', 'Comptes ou échanges analysés par passage', ''],
+            'analysis_events' => ['advanced', 10000, 100, 50000, 'événements', 'Événements analysés par compte ou échange', ''],
         ];
     }
 
@@ -52,7 +51,9 @@ final class TelemetrySettings
     {
         $config = Config::get($universe);
         $saved = isset($config->telemetry_settings) ? json_decode($config->telemetry_settings, true) : [];
-        return array_replace(self::defaults(), is_array($saved) ? $saved : []);
+        $modules = explode(';', $config->moduls);
+        return ['enabled' => (int) ($modules[MODULE_TELEMETRY] ?? 0)]
+            + array_replace(self::defaults(), array_intersect_key(is_array($saved) ? $saved : [], self::defaults()));
     }
 
     public static function validate(array $input): array
@@ -61,12 +62,29 @@ final class TelemetrySettings
         foreach (self::definitions() as $name => $d) {
             $value = $input[$name] ?? null;
             if (!is_scalar($value) || !is_numeric($value) || !is_finite((float) $value) || $value < $d[2] || $value > $d[3] || is_int($d[1]) && (float) $value != (int) $value) {
-                throw new InvalidArgumentException($d[5] . ' : valeur invalide (' . $d[2] . '–' . $d[3] . ' ' . $d[4] . ').');
+                $scale = $d[4] === 'fraction' ? 100 : 1;
+                $unit = $scale === 100 ? '%' : $d[4];
+                throw new InvalidArgumentException($d[5] . ' : valeur attendue entre ' . $d[2] * $scale . ' et ' . $d[3] * $scale . ' ' . $unit . '.');
             }
             $out[$name] = is_int($d[1]) ? (int) $value : (float) $value;
         }
-        if ($out['activity_min_days'] > $out['activity_days'] || $out['reserve_mb'] >= $out['budget_mb'] || $out['rate_metal_min'] > $out['rate_metal_max'] || $out['rate_crystal_min'] > $out['rate_crystal_max'] || $out['repayment_hours'] >= $out['push_days'] * 24 || $out['daily_days'] < $out['activity_days'] || $out['event_days'] < max($out['automation_days'], $out['push_days'])) {
-            throw new InvalidArgumentException('Fenêtres, taux ou réserve incohérents. La rétention doit couvrir les analyses.');
+        if ($out['activity_min_days'] > $out['activity_days']) {
+            throw new InvalidArgumentException('Le nombre de jours requis dépasse la période analysée.');
+        }
+        if ($out['reserve_mb'] >= $out['budget_mb']) {
+            throw new InvalidArgumentException('L’espace à garder libre doit être inférieur à l’espace maximal.');
+        }
+        if ($out['rate_metal_min'] > $out['rate_metal_max'] || $out['rate_crystal_min'] > $out['rate_crystal_max']) {
+            throw new InvalidArgumentException('Les taux minimums ne peuvent pas dépasser les maximums.');
+        }
+        if ($out['repayment_hours'] >= $out['push_days'] * 24) {
+            throw new InvalidArgumentException('La période d’analyse des échanges doit dépasser le délai de remboursement.');
+        }
+        if ($out['daily_days'] < $out['activity_days']) {
+            throw new InvalidArgumentException('La conservation des fenêtres d’activité doit couvrir la période analysée.');
+        }
+        if ($out['event_days'] < max($out['automation_days'], $out['push_days'])) {
+            throw new InvalidArgumentException('Conservez les actions détaillées au moins ' . max($out['automation_days'], $out['push_days']) . ' jours pour couvrir les analyses.');
         }
         return $out;
     }
