@@ -8,3 +8,4 @@
 define('DATABASE_CONFIG_FILE', dirname(__DIR__) . '/includes/config.test.php');
 
 require dirname(__DIR__) . '/vendor/autoload.php';
+require_once __DIR__ . '/integration/IntegrationTestCase.php';

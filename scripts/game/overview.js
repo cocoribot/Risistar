@@ -15,7 +15,7 @@ $(document).ready(function()
 		$('.timer').each(function() {
 			var s		= $(this).data('time') - (serverTime.getTime() - startTime) / 1000;
 			if(s == 0) {
-				window.location.href = "game.php?page=overview";
+				window.location.href = "game.php?page=overview&passive_reload=queue";
 			} else {
 				$(this).text(GetRestTimeFormat(s));
 			}

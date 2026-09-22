@@ -502,6 +502,12 @@ HTML;
 			$chanceCreateMoon	= 0;
 		}
 
+		if (class_exists('PlayerTelemetry', false)) {
+			PlayerTelemetry::record((int)$this->_fleet['fleet_owner'], (int)$this->_fleet['fleet_universe'],
+				'combat', (int)$this->_fleet['fleet_target_owner'], (int)$this->_fleet['fleet_id'],
+				['planet'=>(int)$this->_fleet['fleet_end_id'], 'moon_chance'=>(float)$chanceCreateMoon],
+				false, (int)$this->_fleet['fleet_start_time']);
+		}
 		$reportInfo	= array(
 			'thisFleet'				=> $this->_fleet,
 			'debris'				=> $debris,

@@ -82,11 +82,11 @@ class AcsBashRecallTest extends IntegrationTestCase
         self::$defenderId = (int) $users[1]['id'];
 
         self::$attackerPlanet = self::$db->selectSingle(
-            'SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;',
+            'SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;',
             [':ownerId' => self::$attackerId]
         );
         self::$defenderPlanet = self::$db->selectSingle(
-            'SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;',
+            'SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;',
             [':ownerId' => self::$defenderId]
         );
 

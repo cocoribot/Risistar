@@ -23,6 +23,7 @@
 		{if allowedTo('ShowBanPage')}<li><a href="?page=bans" target="Hauptframe">{$LNG.mu_ban_options}</a></li>{/if}
 		{if allowedTo('ShowGiveawayPage')}<li><a href="?page=giveaway" target="Hauptframe">{$LNG.mu_giveaway}</a></li>{/if}
 		<li><a href="javascript:void(0);"><span style="color:lime">{$LNG.mu_observation}</span></a></li>
+        {if $telemetryAccess}<li><a href="?page=telemetry" target="Hauptframe">Activité des joueurs</a></li>{/if}
 		{if allowedTo('ShowSearchPage')}<li><a href="?page=search&amp;search=online&amp;minimize=on" target="Hauptframe">{$LNG.mu_connected}</a></li>{/if}
 		{if allowedTo('ShowSupportPage')}<li><a href="?page=support" target="Hauptframe">{$LNG.mu_support}{if $supportticks != 0} ({$supportticks}){/if}</a></li>{/if}
 		{if allowedTo('ShowActivePage')}<li><a href="?page=active" target="Hauptframe">{$LNG.mu_vaild_users}</a></li>{/if}

@@ -12,7 +12,7 @@ function Buildlist() {
 		$('#command').remove();
 		document.title	= Ready + ' - ' + Gamename;
 		window.setTimeout(function() {
-			window.location.href = 'game.php?page=research';
+			window.location.href = 'game.php?page=research&passive_reload=queue';
 		}, 1000);
 		return true;
 	}

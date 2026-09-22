@@ -32,7 +32,7 @@ if (function_exists('mb_internal_encoding')) {
 }
 
 ignore_user_abort(true);
-error_reporting(E_ALL & ~E_STRICT & ~E_DEPRECATED & ~E_USER_DEPRECATED);
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
 
 // If date.timezone is invalid
 date_default_timezone_set(@date_default_timezone_get());
@@ -56,6 +56,12 @@ require 'includes/classes/Universe.class.php';
 require 'includes/classes/ArrayUtil.class.php';
 require 'includes/classes/Cache.class.php';
 require 'includes/classes/Database.class.php';
+require_once 'includes/classes/TelemetryConnection.class.php';
+require_once 'includes/classes/TelemetrySettings.class.php';
+require_once 'includes/classes/TelemetryActivity.class.php';
+require_once 'includes/classes/TelemetryStore.class.php';
+require_once 'includes/classes/PlayerTelemetry.class.php';
+require_once 'includes/classes/GameRequest.class.php';
 require 'includes/classes/Config.class.php';
 require 'includes/classes/class.FleetFunctions.php';
 require 'includes/classes/HTTP.class.php';
@@ -134,17 +140,7 @@ if (MODE === 'INGAME' || MODE === 'ADMIN' || MODE === 'CRON')
 	if (MODE === 'INGAME') {
 		$db = Database::get();
 		$db->beginTransaction();
-		register_shutdown_function(function() {
-			$db = Database::get();
-			$depth = $db->getTransactionDepth();
-			if ($depth > 1) {
-				// Nested atomic section did not finish — drop the whole request.
-				$db->rollBackAll();
-			} elseif ($depth === 1) {
-				// Page with disableEcoSystem (or early exit) still must release locks.
-				$db->commit();
-			}
-		});
+		GameRequest::register();
 	}
 	
 	if(!AJAX_REQUEST && MODE === 'INGAME' && isModuleAvailable(MODULE_FLEET_EVENTS)) {
@@ -169,6 +165,9 @@ if (MODE === 'INGAME' || MODE === 'ADMIN' || MODE === 'CRON')
 	if(empty($USER))
 	{
 		HTTP::redirectTo('index.php?code=3');
+	}
+	if (MODE === 'INGAME') {
+		PlayerTelemetry::interaction((int)$USER['id'], (int)$USER['universe']);
 	}
 	
 	$LNG	= new Language($USER['lang']);

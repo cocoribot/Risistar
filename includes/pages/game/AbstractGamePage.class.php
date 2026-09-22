@@ -48,7 +48,7 @@ abstract class AbstractGamePage
 			$this->ecoObj->CalcResource();
 			// Closure, not array($this, ...), so saveOnShutdown() can stay non-public:
 			// game.php dispatches any public method named by the client's `mode` param.
-			register_shutdown_function(function() { $this->saveOnShutdown(); });
+			GameRequest::economy(function() { $this->saveOnShutdown(); });
 		}
 
 		// tplObj is always built: ajax pages still call assign()/gotoside() and would fatal on NULL.
@@ -255,7 +255,7 @@ abstract class AbstractGamePage
 	// request and skip SavePlanetToDB (memory would not match DB).
 	protected function saveOnShutdown() {
 		$db = Database::get();
-		if ($db->getTransactionDepth() > 1) {
+		if ($db->getTransactionDepth() > 1 || $db->wasRequestRolledBack()) {
 			$db->rollBackAll();
 			return;
 		}

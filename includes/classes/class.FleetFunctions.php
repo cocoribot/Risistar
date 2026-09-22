@@ -325,6 +325,7 @@ class FleetFunctions
 	
 	public static function SendFleetBack($USER, $FleetID)
 	{
+		$requestedFleetId = (int)$FleetID;
 		$db				= Database::get();
 
 		$sql			= 'SELECT start_time, fleet_start_time, fleet_mission, fleet_group, fleet_owner, fleet_mess FROM %%FLEETS%% WHERE fleet_id = :fleetId;';
@@ -408,6 +409,9 @@ class FleetFunctions
 			':hasCanceled'	=> 1
 		));
 
+		if (class_exists('PlayerTelemetry', false)) {
+			PlayerTelemetry::action('fleet.recall', 0, $requestedFleetId);
+		}
 		return true;
 	}
 	
@@ -705,5 +709,9 @@ class FleetFunctions
 			':timestamp'				=> TIMESTAMP,
 			':universe'	   				=> Universe::current(),
 		));
+		if (class_exists('PlayerTelemetry', false)) {
+			PlayerTelemetry::action('fleet.send', (int)$fleetTargetOwner, (int)$fleetId,
+				['mission' => (int)$fleetMission, 'planet' => (int)$fleetTargetPlanetID]);
+		}
 	}
 }

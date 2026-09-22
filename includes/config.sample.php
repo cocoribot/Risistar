@@ -25,5 +25,15 @@ $database['databasename']	= '%s';
 $database['tableprefix']	= '%s';
 $salt						= '%s'; // 22 digits from the alphabet "./0-9A-Za-z"
 
+// Optional dedicated telemetry database. Credentials stay in includes/config.php.
+$telemetry = [
+    'enabled' => false, // deployment master switch; admin collection defaults to off
+    'host' => 'localhost',
+    'port' => 3306,
+    'databasename' => '',
+    'user' => '',
+    'userpw' => '',
+];
+
 //### Do not change beyond here ###//
 ?>

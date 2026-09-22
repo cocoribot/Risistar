@@ -357,6 +357,7 @@ class ShowResearchPage extends AbstractGamePage
 
 		if(!empty($TheCommand) && $_SERVER['REQUEST_METHOD'] === 'POST' && $USER['urlaubs_modus'] == 0)
 		{
+			$telemetryBefore = $USER['b_tech_queue'];
 			switch($TheCommand)
 			{
 				case 'cancel':
@@ -373,6 +374,9 @@ class ShowResearchPage extends AbstractGamePage
 				break;
 			}
 			
+			if ($telemetryBefore !== $USER['b_tech_queue']) {
+				PlayerTelemetry::action('queue.research', 0, 0, ['command' => $TheCommand]);
+			}
 			$this->redirectTo('game.php?page=research');
 		}
 		

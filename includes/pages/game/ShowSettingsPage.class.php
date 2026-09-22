@@ -179,6 +179,7 @@ class ShowSettingsPage extends AbstractGamePage
 			));
 		}
 		
+		PlayerTelemetry::action('account.settings');
 		$this->printMessage($LNG['op_options_changed'], array(array(
 			'label'	=> $LNG['sys_forward'],
 			'url'	=> 'game.php?page=settings'
@@ -408,6 +409,7 @@ class ShowSettingsPage extends AbstractGamePage
 			':userID'			=> $USER['id']
 		));
 		
+		PlayerTelemetry::action('account.settings');
 		$this->printMessage($LNG['op_options_changed'], array(array(
 			'label'	=> $LNG['sys_forward'],
 			'url'	=> 'game.php?page=settings'

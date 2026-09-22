@@ -1,0 +1,36 @@
+name: risistar-telemetry-test
+services:
+  mysql:
+    image: mysql:8.4
+    command: ["--sql-mode=NO_ENGINE_SUBSTITUTION", "--innodb-buffer-pool-size=128M"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${TELEMETRY_TEST_PASSWORD:?Run scripts/test-telemetry.sh}
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+  php:
+    build: .
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ${TELEMETRY_TEST_COPY:?Run scripts/test-telemetry.sh}:/var/www/html
+    ports:
+      - "127.0.0.1:18084:80"
+    environment:
+      TELEMETRY_RELEASE_TEST: "1"
+      TELEMETRY_TEST_PASSWORD: ${TELEMETRY_TEST_PASSWORD}
+  browser:
+    image: mcr.microsoft.com/playwright:v1.58.2-noble
+    network_mode: service:php
+    depends_on: [php]
+    working_dir: /work
+    volumes:
+      - ${TELEMETRY_TEST_COPY:?Run scripts/test-telemetry.sh}:/work
+    environment:
+      TELEMETRY_TEST_PASSWORD: ${TELEMETRY_TEST_PASSWORD}
+    profiles: [browser]

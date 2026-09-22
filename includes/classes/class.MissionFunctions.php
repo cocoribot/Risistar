@@ -138,6 +138,21 @@ class MissionFunctions
 		 	':planetId'		=> $planetId
 		));
 
+		if (!$onStart && (int)$this->_fleet['fleet_mission'] === 3 && $db->rowCount() > 0
+			&& class_exists('PlayerTelemetry', false) && PlayerTelemetry::enabled((int)$this->_fleet['fleet_universe'])) {
+			$recipient = (int)$db->selectSingle('SELECT id_owner FROM %%PLANETS%% WHERE id=:id',
+				[':id'=>$planetId], 'id_owner');
+			if ($recipient !== (int)$this->_fleet['fleet_owner']) {
+				PlayerTelemetry::record((int)$this->_fleet['fleet_owner'], (int)$this->_fleet['fleet_universe'],
+					'delivery', $recipient, (int)$this->_fleet['fleet_id'], [
+						'metal' => (float)$this->_fleet['fleet_resource_metal'],
+						'crystal' => (float)$this->_fleet['fleet_resource_crystal'],
+						'deuterium' => (float)$this->_fleet['fleet_resource_deuterium'],
+						'planet' => (int)$planetId,
+					], false, (int)$this->_fleet['fleet_start_time']);
+			}
+		}
+
 		$this->UpdateFleet('fleet_resource_metal', '0');
 		$this->UpdateFleet('fleet_resource_crystal', '0');
 		$this->UpdateFleet('fleet_resource_deuterium', '0');

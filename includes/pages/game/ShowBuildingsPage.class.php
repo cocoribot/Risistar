@@ -292,6 +292,7 @@ class ShowBuildingsPage extends AbstractGamePage
 		{
 			$Element     	= HTTP::_GP('building', 0);
 			$ListID      	= HTTP::_GP('listid', 0);
+			$telemetryBefore = $PLANET['b_building_id'];
 			switch($TheCommand)
 			{
 				case 'cancel':
@@ -308,6 +309,9 @@ class ShowBuildingsPage extends AbstractGamePage
 				break;
 			}
 			
+			if ($telemetryBefore !== $PLANET['b_building_id']) {
+				PlayerTelemetry::action('queue.buildings', 0, 0, ['command' => $TheCommand]);
+			}
 			$this->redirectTo('game.php?page=buildings');
 		}
 

@@ -76,6 +76,7 @@ class GalaxyRows
 			':accept'			=> 1,
 	  	));
 
+		PlayerTelemetry::action('galaxy.view', 0, 0, ['galaxy'=>(int)$this->Galaxy, 'system'=>(int)$this->System]);
 		foreach ($galaxyResult as $galaxyRow)
 		{
         	$this->galaxyRow = $galaxyRow;

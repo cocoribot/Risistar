@@ -46,6 +46,10 @@ if($USER['authlevel'] == AUTH_ADM && !empty($uni))
 $page	= HTTP::_GP('page', '');
 switch($page)
 {
+	case 'telemetry':
+		include_once('includes/pages/adm/ShowTelemetryPage.php');
+		ShowTelemetryPage();
+	break;
 	case 'logout':
 		include_once('includes/pages/adm/ShowLogoutPage.php');
 		ShowLogoutPage();

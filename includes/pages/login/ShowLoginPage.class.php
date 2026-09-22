@@ -59,6 +59,7 @@ class ShowLoginPage extends AbstractLoginPage
 			$session->userId		= (int) $loginData['id'];
 			$session->adminAccess	= 0;
 			$session->save();
+			PlayerTelemetry::record((int)$loginData['id'], (int)Universe::current(), 'login', 0, 0, [], true);
 
 			HTTP::redirectTo('game.php');
 		}

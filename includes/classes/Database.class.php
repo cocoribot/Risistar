@@ -23,6 +23,8 @@ class Database
 	protected $queryCounter = 0;
 	/** @var int Nesting depth for beginTransaction/commit/rollBack (savepoints when > 1). */
 	protected $transactionDepth = 0;
+	protected $commitCallbacks = [];
+	protected $requestRolledBack = false;
 	protected static $instance = NULL;
 
 
@@ -95,7 +97,22 @@ class Database
 		}
 
 		$this->transactionDepth++;
+		$this->commitCallbacks[$this->transactionDepth] = [];
 		return true;
+	}
+
+	public function afterCommit(callable $callback)
+	{
+		if ($this->transactionDepth === 0) {
+			$callback();
+		} else {
+			$this->commitCallbacks[$this->transactionDepth][] = $callback;
+		}
+	}
+
+	public function wasRequestRolledBack()
+	{
+		return $this->requestRolledBack;
 	}
 
 	public function commit()
@@ -104,13 +121,22 @@ class Database
 			return false;
 		}
 
-		$this->transactionDepth--;
-
-		if ($this->transactionDepth === 0) {
-			return $this->dbHandle->commit();
+		$depth = $this->transactionDepth;
+		if ($depth === 1) {
+			$this->dbHandle->commit();
+		} else {
+			$this->dbHandle->exec('RELEASE SAVEPOINT nest_'.($depth - 1));
 		}
-
-		$this->dbHandle->exec('RELEASE SAVEPOINT nest_'.$this->transactionDepth);
+		$this->transactionDepth--;
+		$callbacks = $this->commitCallbacks[$depth] ?? [];
+		unset($this->commitCallbacks[$depth]);
+		if ($depth === 1) {
+			foreach ($callbacks as $callback) {
+				$callback();
+			}
+		} else {
+			$this->commitCallbacks[$depth - 1] = array_merge($this->commitCallbacks[$depth - 1] ?? [], $callbacks);
+		}
 		return true;
 	}
 
@@ -120,9 +146,11 @@ class Database
 			return false;
 		}
 
+		unset($this->commitCallbacks[$this->transactionDepth]);
 		$this->transactionDepth--;
 
 		if ($this->transactionDepth === 0) {
+			$this->requestRolledBack = true;
 			return $this->dbHandle->rollBack();
 		}
 
@@ -148,6 +176,8 @@ class Database
 	 */
 	public function rollBackAll()
 	{
+		$this->commitCallbacks = [];
+		$this->requestRolledBack = true;
 		if ($this->transactionDepth <= 0 && !$this->dbHandle->inTransaction()) {
 			return false;
 		}
