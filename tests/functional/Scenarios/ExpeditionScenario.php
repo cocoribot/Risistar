@@ -44,7 +44,7 @@ class ExpeditionScenario implements ScenarioInterface
         }
 
         $startPlanet = $db->selectSingle(
-            "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1 ORDER BY id ASC;",
+            "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1 ORDER BY id ASC;",
             [':ownerId' => $user['id']]
         );
 

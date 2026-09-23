@@ -182,7 +182,7 @@ class FleetEventLockTest extends IntegrationTestCase
 
         $ownerId = (int) $users[0]['id'];
         $planet = self::$db->selectSingle(
-            'SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;',
+            'SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;',
             [':ownerId' => $ownerId]
         );
         if (empty($planet)) {

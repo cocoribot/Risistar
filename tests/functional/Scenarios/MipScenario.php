@@ -46,7 +46,7 @@ class MipScenario implements ScenarioInterface
         if ($direction === 'outgoing' || $direction === 'out') {
             // OUTGOING: Le joueur cible tire des MIPs vers une planète ennemie
             $startPlanet = $db->selectSingle(
-                "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1 ORDER BY id ASC;",
+                "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1 ORDER BY id ASC;",
                 [':ownerId' => $user['id']]
             );
 
@@ -69,7 +69,7 @@ class MipScenario implements ScenarioInterface
             for ($i = 0; $i < $count; $i++) {
                 $enemy = $enemies[$i % count($enemies)];
                 $targetPlanet = $db->selectSingle(
-                    "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1;",
+                    "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1;",
                     [':ownerId' => $enemy['id']]
                 );
 
@@ -116,7 +116,7 @@ class MipScenario implements ScenarioInterface
         } else {
             // INCOMING (défaut): Des ennemis tirent des MIPs vers le joueur cible
             $targetPlanet = $db->selectSingle(
-                "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1 ORDER BY id ASC;",
+                "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1 ORDER BY id ASC;",
                 [':ownerId' => $user['id']]
             );
 
@@ -139,7 +139,7 @@ class MipScenario implements ScenarioInterface
             for ($i = 0; $i < $count; $i++) {
                 $enemy = $enemies[$i % count($enemies)];
                 $startPlanet = $db->selectSingle(
-                    "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1;",
+                    "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1;",
                     [':ownerId' => $enemy['id']]
                 );
 

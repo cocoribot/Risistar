@@ -115,7 +115,7 @@ class UniverseSeeder
 
         // Charger positions déjà occupées
         $occupiedCoords = [];
-        $existingPlanets = $db->select("SELECT galaxy, system, planet FROM %%PLANETS%%;");
+        $existingPlanets = $db->select("SELECT galaxy, `system`, planet FROM %%PLANETS%%;");
         foreach ($existingPlanets as $ep) {
             $occupiedCoords["{$ep['galaxy']}:{$ep['system']}:{$ep['planet']}"] = true;
         }
@@ -189,7 +189,7 @@ class UniverseSeeder
 
                 // Planètes & colonies
                 $playerPlanets = [];
-                $mainPlanetData = $db->selectSingle("SELECT id, galaxy, system, planet FROM %%PLANETS%% WHERE id = :planetId;", [':planetId' => $planetId]);
+                $mainPlanetData = $db->selectSingle("SELECT id, galaxy, `system`, planet FROM %%PLANETS%% WHERE id = :planetId;", [':planetId' => $planetId]);
                 $playerPlanets[] = [
                     'id' => $planetId,
                     'galaxy' => $mainPlanetData['galaxy'],

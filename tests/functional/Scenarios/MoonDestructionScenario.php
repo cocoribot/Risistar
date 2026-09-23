@@ -40,14 +40,14 @@ class MoonDestructionScenario implements ScenarioInterface
         }
 
         // Trouver une lune de la cible
-        $targetMoon = $db->selectSingle("SELECT id, id_owner, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;", [
+        $targetMoon = $db->selectSingle("SELECT id, id_owner, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;", [
             ':ownerId' => $targetUser['id'],
             ':pType' => 3
         ]);
 
         if (empty($targetMoon)) {
             echo "[WARN] La cible '{$targetName}' n'a pas encore de lune. Recherche d'une autre lune...\n";
-            $targetMoon = $db->selectSingle("SELECT id, id_owner, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE planet_type = :pType;", [
+            $targetMoon = $db->selectSingle("SELECT id, id_owner, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE planet_type = :pType;", [
                 ':pType' => 3
             ]);
         }
@@ -61,7 +61,7 @@ class MoonDestructionScenario implements ScenarioInterface
             ':targetId' => $targetMoon['id_owner']
         ]);
 
-        $attackerPlanet = $db->selectSingle("SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;", [
+        $attackerPlanet = $db->selectSingle("SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;", [
             ':ownerId' => $attacker['id'],
             ':pType' => 1
         ]);

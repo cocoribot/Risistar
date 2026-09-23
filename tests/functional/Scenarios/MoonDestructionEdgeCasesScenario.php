@@ -39,20 +39,20 @@ class MoonDestructionEdgeCasesScenario implements ScenarioInterface
             return;
         }
 
-        $pMoon = $db->selectSingle("SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;", [
+        $pMoon = $db->selectSingle("SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;", [
             ':ownerId' => $player['id'],
             ':pType' => 3
         ]);
 
         if (empty($pMoon)) {
             echo "[WARN] La cible n'a pas de lune. Création d'une lune temporaire pour le scénario...\n";
-            $pPlanet = $db->selectSingle("SELECT galaxy, system, planet FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;", [
+            $pPlanet = $db->selectSingle("SELECT galaxy, `system`, planet FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;", [
                 ':ownerId' => $player['id'],
                 ':pType' => 1
             ]);
             if ($pPlanet) {
                 $moonId = PlayerUtil::createMoon(1, $pPlanet['galaxy'], $pPlanet['system'], $pPlanet['planet'], $player['id'], 20, 8944, 'Lune Test EdgeCase');
-                $pMoon = $db->selectSingle("SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id = :id;", [':id' => $moonId]);
+                $pMoon = $db->selectSingle("SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id = :id;", [':id' => $moonId]);
             }
         }
 
@@ -61,7 +61,7 @@ class MoonDestructionEdgeCasesScenario implements ScenarioInterface
             return;
         }
 
-        $otherPlanet = $db->selectSingle("SELECT id, id_owner, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner != :ownerId AND planet_type = :pType;", [
+        $otherPlanet = $db->selectSingle("SELECT id, id_owner, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner != :ownerId AND planet_type = :pType;", [
             ':ownerId' => $player['id'],
             ':pType' => 1
         ]);

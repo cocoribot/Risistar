@@ -47,7 +47,7 @@ class SpyScenario implements ScenarioInterface
         if ($direction === 'outgoing' || $direction === 'out') {
             // OUTGOING: Le joueur cible espionne des planètes ennemies
             $startPlanet = $db->selectSingle(
-                "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1 ORDER BY id ASC;",
+                "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1 ORDER BY id ASC;",
                 [':ownerId' => $user['id']]
             );
 
@@ -70,7 +70,7 @@ class SpyScenario implements ScenarioInterface
             for ($i = 0; $i < $count; $i++) {
                 $enemy = $enemies[$i % count($enemies)];
                 $targetPlanet = $db->selectSingle(
-                    "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;",
+                    "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;",
                     [':ownerId' => $enemy['id'], ':pType' => $targetType]
                 );
 
@@ -116,7 +116,7 @@ class SpyScenario implements ScenarioInterface
         } else {
             // INCOMING (défaut): Des ennemis espionnent la planète/lune du joueur cible
             $targetPlanet = $db->selectSingle(
-                "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType ORDER BY id ASC;",
+                "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType ORDER BY id ASC;",
                 [':ownerId' => $user['id'], ':pType' => $targetType]
             );
 
@@ -139,7 +139,7 @@ class SpyScenario implements ScenarioInterface
             for ($i = 0; $i < $count; $i++) {
                 $enemy = $enemies[$i % count($enemies)];
                 $startPlanet = $db->selectSingle(
-                    "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1;",
+                    "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1;",
                     [':ownerId' => $enemy['id']]
                 );
 

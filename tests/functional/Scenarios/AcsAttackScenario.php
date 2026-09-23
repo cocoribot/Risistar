@@ -40,7 +40,7 @@ class AcsAttackScenario implements ScenarioInterface
             return;
         }
 
-        $targetPlanet = $db->selectSingle("SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;", [
+        $targetPlanet = $db->selectSingle("SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;", [
             ':ownerId' => $targetUser['id']
         ]);
 
@@ -56,7 +56,7 @@ class AcsAttackScenario implements ScenarioInterface
         }
 
         $leadAttacker = $attackers[0];
-        $leadPlanet = $db->selectSingle("SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY RAND() LIMIT 1;", [
+        $leadPlanet = $db->selectSingle("SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY RAND() LIMIT 1;", [
             ':ownerId' => $leadAttacker['id']
         ]);
 
@@ -111,7 +111,7 @@ class AcsAttackScenario implements ScenarioInterface
         // 3. Envoyer les flottes qui rejoignent l'AG
         for ($i = 1; $i < count($attackers); $i++) {
             $joinAttacker = $attackers[$i];
-            $joinPlanet = $db->selectSingle("SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY RAND() LIMIT 1;", [
+            $joinPlanet = $db->selectSingle("SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY RAND() LIMIT 1;", [
                 ':ownerId' => $joinAttacker['id']
             ]);
 

@@ -29,11 +29,11 @@ $attackerId = (int) $users[0]['id'];
 $defenderId = (int) $users[1]['id'];
 
 $attackerPlanet = $db->selectSingle(
-    'SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;',
+    'SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;',
     [':ownerId' => $attackerId]
 );
 $defenderPlanet = $db->selectSingle(
-    'SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;',
+    'SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;',
     [':ownerId' => $defenderId]
 );
 

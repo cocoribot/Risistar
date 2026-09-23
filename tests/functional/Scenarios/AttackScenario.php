@@ -47,13 +47,13 @@ class AttackScenario implements ScenarioInterface
         if ($direction === 'outgoing' || $direction === 'out') {
             // OUTGOING: Le joueur cible lance des raids vers des ennemis
             $startPlanet = $db->selectSingle(
-                "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;",
+                "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;",
                 [':ownerId' => $user['id'], ':pType' => $targetType]
             );
 
             if (empty($startPlanet)) {
                 $startPlanet = $db->selectSingle(
-                    "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1;",
+                    "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1;",
                     [':ownerId' => $user['id']]
                 );
             }
@@ -77,7 +77,7 @@ class AttackScenario implements ScenarioInterface
             for ($i = 0; $i < $count; $i++) {
                 $enemy = $enemies[$i % count($enemies)];
                 $targetPlanet = $db->selectSingle(
-                    "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1;",
+                    "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1;",
                     [':ownerId' => $enemy['id']]
                 );
 
@@ -126,7 +126,7 @@ class AttackScenario implements ScenarioInterface
         } else {
             // INCOMING (défaut): Des ennemis lancent des attaques vers le joueur cible
             $targetPlanet = $db->selectSingle(
-                "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;",
+                "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;",
                 [':ownerId' => $user['id'], ':pType' => $targetType]
             );
 
@@ -149,7 +149,7 @@ class AttackScenario implements ScenarioInterface
             for ($i = 0; $i < $count; $i++) {
                 $enemy = $enemies[$i % count($enemies)];
                 $startPlanet = $db->selectSingle(
-                    "SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1;",
+                    "SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = 1;",
                     [':ownerId' => $enemy['id']]
                 );
 

@@ -303,6 +303,8 @@ function MyCrazyLittleSearch($SpecifyItems, $WhereItem, $SpecifyWhere, $SpecialS
 
 	if (!$Order || !in_array($Order, $ArrayOSec))
 		$Order	= $ArrayEx[0];
+	// Whitelisted names are quoted: SYSTEM is a reserved word in MySQL 8.
+	$OrderSql	= in_array($Order, $ArrayOSec, true) ? '`'.$Order.'`' : $Order;
 
 	// Security: $OrderBY (key_acc) is concatenated into the ORDER BY clause
 	// below and only passes through htmlspecialchars (no quotes needed to break
@@ -316,7 +318,7 @@ function MyCrazyLittleSearch($SpecifyItems, $WhereItem, $SpecifyWhere, $SpecialS
 	$QuerySearch	 = "SELECT ".$SpecifyItems." FROM ".DB_PREFIX.$Table." ";
 	$QuerySearch	.= $WhereItem." ";
 	$QuerySearch	.= $SpecifyWhere." ".$SpecialSpecify." ";
-	$QuerySearch	.= "ORDER BY ".$Order." ".$OrderBY." ";
+	$QuerySearch	.= "ORDER BY ".$OrderSql." ".$OrderBY." ";
 	$QuerySearch	.= "LIMIT ".$INI.",".$Limit;
 	$FinalQuery		= $GLOBALS['DATABASE']->query($QuerySearch);
 	

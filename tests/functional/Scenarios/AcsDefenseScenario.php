@@ -39,7 +39,7 @@ class AcsDefenseScenario implements ScenarioInterface
             return;
         }
 
-        $targetPlanet = $db->selectSingle("SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;", [
+        $targetPlanet = $db->selectSingle("SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY id ASC LIMIT 1;", [
             ':ownerId' => $targetUser['id']
         ]);
 
@@ -52,7 +52,7 @@ class AcsDefenseScenario implements ScenarioInterface
             return;
         }
 
-        $allyPlanet = $db->selectSingle("SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY RAND() LIMIT 1;", [
+        $allyPlanet = $db->selectSingle("SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId ORDER BY RAND() LIMIT 1;", [
             ':ownerId' => $allyUser['id']
         ]);
 

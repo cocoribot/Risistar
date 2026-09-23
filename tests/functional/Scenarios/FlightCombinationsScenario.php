@@ -39,23 +39,23 @@ class FlightCombinationsScenario implements ScenarioInterface
             return;
         }
 
-        $pPlanet = $db->selectSingle("SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;", [
+        $pPlanet = $db->selectSingle("SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;", [
             ':ownerId' => $player['id'],
             ':pType' => 1
         ]);
 
-        $pMoon = $db->selectSingle("SELECT id, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;", [
+        $pMoon = $db->selectSingle("SELECT id, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner = :ownerId AND planet_type = :pType;", [
             ':ownerId' => $player['id'],
             ':pType' => 3
         ]);
 
         // Cibles d'autres joueurs
-        $otherPlanet = $db->selectSingle("SELECT id, id_owner, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner != :ownerId AND planet_type = :pType;", [
+        $otherPlanet = $db->selectSingle("SELECT id, id_owner, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner != :ownerId AND planet_type = :pType;", [
             ':ownerId' => $player['id'],
             ':pType' => 1
         ]);
 
-        $otherMoon = $db->selectSingle("SELECT id, id_owner, galaxy, system, planet, planet_type FROM %%PLANETS%% WHERE id_owner != :ownerId AND planet_type = :pType;", [
+        $otherMoon = $db->selectSingle("SELECT id, id_owner, galaxy, `system`, planet, planet_type FROM %%PLANETS%% WHERE id_owner != :ownerId AND planet_type = :pType;", [
             ':ownerId' => $player['id'],
             ':pType' => 3
         ]);
