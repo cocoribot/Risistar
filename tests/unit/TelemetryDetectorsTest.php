@@ -200,6 +200,16 @@ class TelemetryDetectorsTest extends UnitTestCase
         $this->assertSame(4, $finding['timeline'][0]['data']['idle_hours']);
     }
 
+    public function testLongerIdleRunIsNeverLessSuspicious(): void
+    {
+        // Three whole days of loads without any action are one long run.
+        $days = array_fill_keys(['2026-09-17', '2026-09-18', '2026-09-19'], array_fill(0, 24, $this->hour(20)));
+
+        $finding = $this->refreshing($days)[0];
+
+        $this->assertSame(3, $finding['metrics']['days']);
+    }
+
     public function testIdleRunShowsTheWaitsBetweenLoads(): void
     {
         $night = [

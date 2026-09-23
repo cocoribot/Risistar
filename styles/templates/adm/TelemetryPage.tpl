@@ -86,7 +86,6 @@
 <table class="metrics"><tbody>{foreach $evaluation.metrics as $row}<tr><th>{$row.label|escape}</th><td>{$row.value|escape}</td></tr>{/foreach}</tbody></table>
 {/if}
 <details><summary>{$LNG.telemetry_ui_thresholds}</summary><table class="metrics">{foreach $evaluation.thresholds as $row}<tr><th>{$row.label|escape}</th><td>{$row.value|escape}</td></tr>{/foreach}</table></details>
-{if $evaluation.truncated}<p class="notice">{$LNG.telemetry_ui_partial_batch}</p>{/if}
 {if $evaluation.sampled}<p>{$LNG.telemetry_ui_sample_first}{$evaluation.count}{$LNG.telemetry_ui_sample_last}</p>{/if}
 <div class="evidence"><table class="timeline"><thead><tr><th>{$LNG.telemetry_ui_date}</th><th>{$LNG.telemetry_ui_actor_target}</th><th>{$LNG.telemetry_ui_action_fleet}</th><th>{$LNG.telemetry_ui_context}</th></tr></thead><tbody>
 {foreach $evaluation.timeline as $event}

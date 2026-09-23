@@ -1467,7 +1467,6 @@ $LNG['telemetry_ui_metal'] = 'Métal';
 $LNG['telemetry_ui_crystal'] = 'Cristal';
 $LNG['telemetry_ui_deuterium'] = 'Deutérium';
 $LNG['telemetry_ui_thresholds'] = 'Seuils utilisés';
-$LNG['telemetry_ui_partial_batch'] = 'Limite d’analyse atteinte : ce dossier couvre un lot partiel.';
 $LNG['telemetry_ui_sample_first'] = 'Premières et dernières observations sur ';
 $LNG['telemetry_ui_sample_last'] = ' événements analysés.';
 $LNG['telemetry_ui_date'] = 'Date';

@@ -82,7 +82,7 @@ class TelemetryCollectionTest extends TelemetryTestCase
 
         $this->actors = [900001, self::$senderId, self::$recipientId];
         $GLOBALS['USER'] = null;
-        $_GET = [];
+        $_REQUEST = [];
         $_POST = [];
         $this->lastMessageId = (int) self::$db->selectSingle('SELECT MAX(message_id) AS id FROM %%MESSAGES%%;', [], 'id');
     }
@@ -112,7 +112,7 @@ class TelemetryCollectionTest extends TelemetryTestCase
             }
             self::$db->delete('DELETE FROM %%MESSAGES%% WHERE message_id > :id;', [':id' => $this->lastMessageId]);
         }
-        $_GET = [];
+        $_REQUEST = [];
         unset($_SERVER['REMOTE_ADDR'], $_SERVER['HTTP_USER_AGENT'], $_SERVER['REQUEST_METHOD']);
 
         parent::tearDown();
@@ -120,7 +120,7 @@ class TelemetryCollectionTest extends TelemetryTestCase
 
     public function testPageLoadCountsAsActivity(): void
     {
-        $_GET = ['page' => 'overview'];
+        $_REQUEST = ['page' => 'overview'];
 
         PlayerTelemetry::interaction(self::$senderId, 1);
         PlayerTelemetry::flush();
@@ -131,7 +131,7 @@ class TelemetryCollectionTest extends TelemetryTestCase
     public function testQueueReloadIsCountedButIsNotActivity(): void
     {
         // buildlist.js reloads the page when a build finishes, even if the player is away.
-        $_GET = ['page' => 'buildings', 'passive_reload' => 'queue'];
+        $_REQUEST = ['page' => 'buildings', 'passive_reload' => 'queue'];
 
         PlayerTelemetry::interaction(self::$senderId, 1);
         PlayerTelemetry::flush();
@@ -142,7 +142,7 @@ class TelemetryCollectionTest extends TelemetryTestCase
 
     public function testSamePageAgainIsAReload(): void
     {
-        $_GET = ['page' => 'overview'];
+        $_REQUEST = ['page' => 'overview'];
 
         $page = PlayerTelemetry::interaction(self::$senderId, 1, 5);
         PlayerTelemetry::interaction(self::$senderId, 1, 5, $page);
@@ -154,7 +154,7 @@ class TelemetryCollectionTest extends TelemetryTestCase
     public function testSamePageOnAnotherPlanetIsAPlanetSwitch(): void
     {
         // Each planet shown gets its activity (*), so cycling planets keeps all of them active.
-        $_GET = ['page' => 'overview'];
+        $_REQUEST = ['page' => 'overview'];
 
         $page = PlayerTelemetry::interaction(self::$senderId, 1, 5);
         PlayerTelemetry::interaction(self::$senderId, 1, 6, $page);
@@ -166,7 +166,7 @@ class TelemetryCollectionTest extends TelemetryTestCase
     public function testAlliancePageIsCountedAsAllianceView(): void
     {
         // The alliance page shows the fleets coming at every member.
-        $_GET = ['page' => 'alliance'];
+        $_REQUEST = ['page' => 'alliance'];
 
         PlayerTelemetry::interaction(self::$senderId, 1, 5);
         PlayerTelemetry::flush();
@@ -178,9 +178,9 @@ class TelemetryCollectionTest extends TelemetryTestCase
     {
         // A script can send forms too; real actions are recorded by the game code that runs them.
         $_SERVER['REQUEST_METHOD'] = 'POST';
-        $_GET = ['page' => 'overview'];
+        $_REQUEST = ['page' => 'overview'];
 
-        PlayerTelemetry::interaction(self::$senderId, 1, 5, '5:overview:');
+        PlayerTelemetry::interaction(self::$senderId, 1, 5, '5:overview');
         PlayerTelemetry::flush();
 
         $this->assertSame(['reload' => 1], $this->store->actionCounts(1, self::$senderId, time() - 60, time()));
@@ -188,21 +188,21 @@ class TelemetryCollectionTest extends TelemetryTestCase
 
     public function testAjaxCallToTheSamePageIsStillAReload(): void
     {
-        $_GET = ['page' => 'overview', 'ajax' => 1];
+        $_REQUEST = ['page' => 'overview', 'ajax' => 1];
 
-        $page = PlayerTelemetry::interaction(self::$senderId, 1, 5, '5:overview:');
+        $page = PlayerTelemetry::interaction(self::$senderId, 1, 5, '5:overview');
         PlayerTelemetry::flush();
 
         $this->assertSame(['reload' => 1], $this->store->actionCounts(1, self::$senderId, time() - 60, time()));
-        $this->assertSame('5:overview:', $page);
+        $this->assertSame('5:overview', $page);
     }
 
     public function testGameActionOnAReloadedPageMakesTheHourBusy(): void
     {
         $GLOBALS['USER'] = ['id' => self::$senderId, 'universe' => 1];
-        $_GET = ['page' => 'buildings'];
+        $_REQUEST = ['page' => 'buildings'];
 
-        PlayerTelemetry::interaction(self::$senderId, 1, 5, '5:buildings:');
+        PlayerTelemetry::interaction(self::$senderId, 1, 5, '5:buildings');
         PlayerTelemetry::action('queue.buildings');
         PlayerTelemetry::flush();
 
@@ -232,11 +232,37 @@ class TelemetryCollectionTest extends TelemetryTestCase
         $this->assertSame('1:6', $shown);
     }
 
-    public function testListInPageNameIsIgnored(): void
+    public function testOtherSpellingOfTheSamePageIsAReload(): void
     {
-        $_GET = ['page' => 'overview', 'mode' => ['x']];
+        // game.php removes these characters before it opens the page.
+        $_REQUEST = ['page' => 'over_vi.ew'];
 
-        $this->assertSame('5:overview:', PlayerTelemetry::interaction(self::$senderId, 1, 5));
+        PlayerTelemetry::interaction(self::$senderId, 1, 5, '5:overview');
+        PlayerTelemetry::flush();
+
+        $this->assertSame(['reload' => 1], $this->store->actionCounts(1, self::$senderId, time() - 60, time()));
+    }
+
+    public function testAnotherTabOfTheSamePageIsAReload(): void
+    {
+        // An unknown tab opens the default one, so tabs cannot make a reload look like play.
+        $_REQUEST = ['page' => 'overview', 'mode' => 'anything'];
+
+        PlayerTelemetry::interaction(self::$senderId, 1, 5, '5:overview');
+        PlayerTelemetry::flush();
+
+        $this->assertSame(['reload' => 1], $this->store->actionCounts(1, self::$senderId, time() - 60, time()));
+    }
+
+    public function testUnknownPagesAreAllTheErrorPage(): void
+    {
+        $_REQUEST = ['page' => 'nothing'];
+
+        $page = PlayerTelemetry::interaction(self::$senderId, 1, 5, '5:error');
+        PlayerTelemetry::flush();
+
+        $this->assertSame(['reload' => 1], $this->store->actionCounts(1, self::$senderId, time() - 60, time()));
+        $this->assertSame('5:error', $page);
     }
 
     public function testPlayerConnectionOutlastsALockWait(): void

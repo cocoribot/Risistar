@@ -104,6 +104,32 @@ class TelemetryAdminPageTest extends TelemetryTestCase
         $this->assertSame(0.8, TelemetrySettings::get(1)['timing_share']);
     }
 
+    public function testAuditEntryIsRemovedWhenTheSettingsCannotBeSaved(): void
+    {
+        // An unknown column makes the game's own Config::save() fail after the audit entry is written.
+        $config = \Config::get(1);
+        $data = new \ReflectionProperty($config, 'configData');
+        $records = new \ReflectionProperty($config, 'updateRecords');
+        $data->setValue($config, $data->getValue($config) + ['no_such_column' => 1]);
+        $records->setValue($config, ['no_such_column']);
+        $_POST = ['sid' => 'session-token', 'action' => 'settings', 'settings' => $this->formValues(['timing_share' => 95])];
+
+        try {
+            telemetryHandlePost($this->review, 1, 'session-token', time());
+            $this->fail('The settings were saved with a broken config table.');
+        } catch (\Exception $e) {
+        } finally {
+            $values = $data->getValue($config);
+            unset($values['no_such_column']);
+            $data->setValue($config, $values);
+            $records->setValue($config, []);
+        }
+
+        $saved = json_decode(self::$db->selectSingle('SELECT telemetry_settings FROM %%CONFIG%% WHERE uni = 1;', [], 'telemetry_settings'), true);
+        $this->assertSame(0.8, $saved['timing_share']);
+        $this->assertSame(0, (int) $this->store->query('SELECT COUNT(*) FROM %%TELEMETRY_AUDIT%% WHERE id > ?', [$this->lastAuditId])->fetchColumn());
+    }
+
     public function testModeratorDecisionIsSavedWithItsNote(): void
     {
         $now = time();

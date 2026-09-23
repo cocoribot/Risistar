@@ -129,7 +129,17 @@ final class TelemetryDetectors
 			$runs,
 			static fn($run) => $run['to'] - $run['from'] >= $settings['refresh_hours'] * 3600
 		));
-		$days = array_unique(array_map(static fn($run) => gmdate('Y-m-d', $run['from']), $runs));
+		// A day counts when a run starts on it or covers refresh_hours of it, so a longer run never counts less.
+		$days = [];
+		foreach ($runs as $run) {
+			$days[gmdate('Y-m-d', $run['from'])] = true;
+			$hours = array_count_values(array_map(static fn($at) => gmdate('Y-m-d', $at), range($run['from'], $run['to'] - 3600, 3600)));
+			foreach ($hours as $day => $count) {
+				if ($count >= $settings['refresh_hours']) {
+					$days[$day] = true;
+				}
+			}
+		}
 		if (count($days) < $settings['refresh_days']) {
 			return [];
 		}

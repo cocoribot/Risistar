@@ -1444,7 +1444,6 @@ $LNG['telemetry_ui_metal'] = 'Metal';
 $LNG['telemetry_ui_crystal'] = 'Crystal';
 $LNG['telemetry_ui_deuterium'] = 'Deuterium';
 $LNG['telemetry_ui_thresholds'] = 'Thresholds used';
-$LNG['telemetry_ui_partial_batch'] = 'Analysis limit reached: this case only uses part of the events.';
 $LNG['telemetry_ui_sample_first'] = 'First and last observations out of ';
 $LNG['telemetry_ui_sample_last'] = ' analysed events.';
 $LNG['telemetry_ui_date'] = 'Date';

@@ -229,6 +229,25 @@ class TelemetryStoreTest extends TelemetryTestCase
         $this->assertSame(['dismissed', 'open'], [$reopening['before'], $reopening['after']]);
     }
 
+    public function testPairWithTooManyDeliveriesToCheckGetsNoPushingWarning(): void
+    {
+        // The repayment comes after the analysis limit: part of the deliveries would show a paid gift as unpaid.
+        $now = time();
+        $start = $now - 5 * 86400;
+        $events = [$this->event(900001, $start, 'delivery', 900002, ['metal' => 4000000])];
+        for ($i = 1; $i <= TelemetrySettings::ANALYSIS_EVENTS; $i++) {
+            $events[] = $this->event(900002, $start + $i, 'delivery', 900001, ['metal' => 1]);
+        }
+        $events[] = $this->event(900002, $now - 4 * 86400, 'delivery', 900001, ['metal' => 4000000]);
+        foreach (array_chunk($events, 256) as $chunk) {
+            $this->store->write($chunk);
+        }
+
+        (new TelemetryReview($this->store))->evaluate(1, $this->settings, $now, 900000, 900000);
+
+        $this->assertSame(0, (int) $this->store->query('SELECT COUNT(*) FROM %%TELEMETRY_WARNINGS%% WHERE actor IN (900001, 900002) AND other > 0')->fetchColumn());
+    }
+
     public function testAllTimeExchangeOutlivesTheDeliveries(): void
     {
         $now = time();

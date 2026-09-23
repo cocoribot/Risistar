@@ -22,12 +22,6 @@ final class PlayerTelemetry
 		}
 	}
 
-	public static function passive(array $query): bool
-	{
-		return (in_array(self::name($query, 'page', 'overview'), ['buildings', 'research', 'overview', 'shipyard'], true)
-				&& ($query['passive_reload'] ?? '') === 'queue');
-	}
-
 	/**
 	 * Sorts each page load by what it changes, and returns the page to remember in the session.
 	 * The same page again or another planet keeps the planet activity (*) alive without playing.
@@ -38,11 +32,12 @@ final class PlayerTelemetry
 	 */
 	public static function interaction(int $actor, int $universe, int $planet = 0, ?string $previous = null): ?string
 	{
-		$query = $_GET + $_POST;
-		$page = $planet . ':' . self::name($query, 'page', 'overview') . ':' . self::name($query, 'mode');
+		$name = self::page();
+		$page = $planet . ':' . $name;
 		$kind = match (true) {
-			self::passive($query) => 'passive',
-			explode(':', $page)[1] === 'alliance' => 'alliance.view',
+			in_array($name, ['buildings', 'research', 'overview', 'shipyard'], true)
+				&& HTTP::_GP('passive_reload', '') === 'queue' => 'passive',
+			$name === 'alliance' => 'alliance.view',
 			$previous === null => 'interaction',
 			$page === $previous => 'reload',
 			explode(':', $previous)[0] !== (string)$planet => 'planet.switch',
@@ -50,7 +45,7 @@ final class PlayerTelemetry
 		};
 		self::record($actor, $universe, $kind, 0, 0, [], $kind !== 'passive');
 		// Small AJAX calls do not replace the page the player is looking at.
-		return empty($query['ajax']) ? $page : $previous;
+		return HTTP::_GP('ajax', 0) ? $previous : $page;
 	}
 
 	/** Counts one game action of the current player. */
@@ -76,9 +71,14 @@ final class PlayerTelemetry
 		return $shown;
 	}
 
-	private static function name(array $query, string $key, string $default = ''): string
+	/**
+	 * The page the game really opens, cleaned like in game.php, so other spellings of one page
+	 * are the same page. Its tabs (mode) are ignored, and every unknown page is the error page.
+	 */
+	private static function page(): string
 	{
-		return is_string($query[$key] ?? null) ? strtolower($query[$key]) : $default;
+		$page = str_replace(['_', '\\', '/', '.', "\0"], '', HTTP::_GP('page', 'overview'));
+		return is_file(ROOT_PATH . 'includes/pages/game/Show' . ucwords($page) . 'Page.class.php') ? strtolower($page) : 'error';
 	}
 
 	public static function client(string $agent): string

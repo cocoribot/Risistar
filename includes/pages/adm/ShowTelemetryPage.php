@@ -198,7 +198,6 @@ function telemetryCase(TelemetryReview $review, TelemetryPresentation $view, int
 			'timeline' => $view->timeline($evidence['timeline']),
 			'sampled' => $evidence['timeline_sampled'] ?? false,
 			'count' => $evidence['timeline_count'] ?? count($evidence['timeline']),
-			'truncated' => !empty($evidence['truncated']),
 		];
 	}
 	foreach ($case['review_history'] as &$entry) {

@@ -80,23 +80,25 @@ final class TelemetryReview
 		$limit = TelemetrySettings::ANALYSIS_EVENTS;
 		$since = $now - TelemetrySettings::deliveryDays($settings) * 86400;
 		$events = $this->store->events($universe, $accountA, $since, $limit, $accountB);
-		$partial = count($events) > $limit;
+		// A balance from only part of the deliveries could miss a repayment, so the check stops here.
+		if (count($events) > $limit) {
+			return [[], true];
+		}
 		$points = Database::get()->select(
 			'SELECT id_owner,total_points FROM %%STATPOINTS%%
 			WHERE universe=:universe AND stat_type=1 AND id_owner IN (:a,:b)',
 			[':universe' => $universe, ':a' => $accountA, ':b' => $accountB]
 		);
 		$points = array_column($points, 'total_points', 'id_owner');
-		$findings = TelemetryDetectors::pushing(array_slice($events, 0, $limit), $accountA, $accountB, $points, $settings, $now);
+		$findings = TelemetryDetectors::pushing($events, $accountA, $accountB, $points, $settings, $now);
 		foreach ($findings as &$finding) {
-			$finding['truncated'] = $partial;
 			$finding['metrics']['lifetime'] = $this->store->pairTotals(
 				$universe,
 				$finding['metrics']['sender'],
 				$finding['metrics']['recipient']
 			);
 		}
-		return [$findings, $partial];
+		return [$findings, false];
 	}
 
 	private function save(int $universe, int $actor, int $other, array $findings, bool $partial, array $settings, int $now): void
@@ -126,15 +128,11 @@ final class TelemetryReview
 	{
 		$finding['evaluated_at'] = $now;
 		$finding['matches'] = true;
-		$finding['truncated'] ??= false;
 		$finding['timeline_count'] = count($finding['timeline']);
 		$finding['timeline'] = array_map(
 			static fn($event) => array_intersect_key($event, array_flip(self::TIMELINE_KEYS)),
 			$finding['timeline']
 		);
-		if ($finding['truncated'] && $finding['strength'] === 'moderate') {
-			$finding['strength'] = 'weak';
-		}
 		// Keep only the first and last events, so a flood of deliveries cannot make one warning grow without limit.
 		if (count($finding['timeline']) > self::TIMELINE_SAMPLE) {
 			$half = self::TIMELINE_SAMPLE / 2;
@@ -209,22 +207,19 @@ final class TelemetryReview
 		if (!$changed) {
 			return;
 		}
-		// The change is only saved when its audit entry can be saved too.
-		$db = $this->store->db;
-		$db->beginTransaction();
+		// The game and telemetry may use two connections: the audit entry is saved first, so a
+		// change is never saved without it, and removed again if the change cannot be saved.
+		$this->store->query(
+			'INSERT INTO %%TELEMETRY_AUDIT%% (universe,admin,at,action,data) VALUES (?,?,?,?,?)',
+			[$universe, $admin, $now, 'settings', json_encode($changed, JSON_THROW_ON_ERROR)]
+		);
+		$audit = (int) $this->store->db->lastInsertId();
 		try {
-			$this->store->query(
-				'INSERT INTO %%TELEMETRY_AUDIT%% (universe,admin,at,action,data) VALUES (?,?,?,?,?)',
-				[$universe, $admin, $now, 'settings', json_encode($changed, JSON_THROW_ON_ERROR)]
-			);
 			$config = Config::get($universe);
 			$config->telemetry_settings = json_encode($values, JSON_THROW_ON_ERROR);
 			$config->save();
-			$db->commit();
 		} catch (Throwable $e) {
-			if ($db->inTransaction()) {
-				$db->rollBack();
-			}
+			$this->store->query('DELETE FROM %%TELEMETRY_AUDIT%% WHERE id=?', [$audit]);
 			throw $e;
 		}
 	}
