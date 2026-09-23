@@ -54,6 +54,9 @@ class Database
 		} else {
 			require 'includes/config.php';
 		}
+		if (class_exists('TelemetryConnection', false)) {
+			TelemetryConnection::configure($database, $telemetry ?? []);
+		}
 		//Connect
 		$db = new PDO("mysql:host=".$database['host'].";port=".$database['port'].";dbname=".$database['databasename'], $database['user'], $database['userpw']);
 		//error behaviour

@@ -325,7 +325,6 @@ class FleetFunctions
 	
 	public static function SendFleetBack($USER, $FleetID)
 	{
-		$requestedFleetId = (int)$FleetID;
 		$db				= Database::get();
 
 		$sql			= 'SELECT start_time, fleet_start_time, fleet_mission, fleet_group, fleet_owner, fleet_mess FROM %%FLEETS%% WHERE fleet_id = :fleetId;';
@@ -409,9 +408,6 @@ class FleetFunctions
 			':hasCanceled'	=> 1
 		));
 
-		if (class_exists('PlayerTelemetry', false)) {
-			PlayerTelemetry::action('fleet.recall', 0, $requestedFleetId);
-		}
 		return true;
 	}
 	

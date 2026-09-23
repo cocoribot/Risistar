@@ -176,6 +176,7 @@ switch ($mode) {
             $dbVersion  = 0;
         }
 
+		$httpRoot = PROTOCOL . HTTP_HOST . str_replace(array('\\', '//'), '/', dirname(dirname($_SERVER['SCRIPT_NAME'])) . '/');
 		$revision = $dbVersion;
 		$fileList = array();
 		$directoryIterator = new DirectoryIterator(ROOT_PATH . 'install/migrations/');
@@ -186,8 +187,8 @@ switch ($mode) {
 			}
 			$fileRevision = substr($fileInfo->getFilename(), 10, -4);
 			if ($fileRevision > $revision && $fileRevision <= DB_VERSION_REQUIRED) {
-				$fileExtension = $fileInfo->getExtension();
-				$key           = $fileRevision . ($fileExtension === 'php' ? '1' : '0');
+				$fileExtension = pathinfo($filePath, PATHINFO_EXTENSION);
+				$key           = $fileRevision . ((int)$fileExtension === 'php');
 				$fileList[$key] = array(
 					'fileName'      => $fileInfo->getFilename(),
 					'fileRevision'  => $fileRevision,
@@ -199,9 +200,25 @@ switch ($mode) {
         foreach ($fileList as $fileInfo) {
             switch ($fileInfo['fileExtension']) {
                 case 'php':
-                    // Run the update here so a failure stops the upgrade.
-                    $migration = require ROOT_PATH.'install/migrations/' . $fileInfo['fileName'];
-                    $migration(Database::get());
+                    copy(ROOT_PATH.'install/migrations/' . $fileInfo['fileName'], ROOT_PATH.$fileInfo['fileName']);
+                    $ch = curl_init($httpRoot . $fileInfo['fileName']);
+                    curl_setopt($ch, CURLOPT_HEADER, false);
+                    curl_setopt($ch, CURLOPT_NOBODY, true);
+                    curl_setopt($ch, CURLOPT_MUTE, true);
+                    curl_exec($ch);
+                    if (curl_errno($ch)) {
+                        $errorMessage = 'CURL-Error on update ' . basename($fileInfo['filePath']) . ':' . curl_error($ch);
+                        try {
+                            $dump->restoreDatabase($filePath);
+                            $message = 'Update error.<br><br>' . $errorMessage . '<br><br><b><i>Backup restored.</i></b>';
+                        }
+                        catch (Exception $e) {
+                            $message = 'Update error.<br><br>' . $errorMessage . '<br><br><b><i>Can not restore backup. Your game is maybe broken right now.</i></b><br><br>Restore error:<br>' . $e->getMessage();
+                        }
+                        throw new Exception($message);
+                    }
+                    curl_close($ch);
+                    unlink($fileInfo['fileName']);
                     break;
                 case 'sql';
                     $data = file_get_contents(ROOT_PATH . 'install/migrations/' . $fileInfo['fileName']);
@@ -227,8 +244,8 @@ switch ($mode) {
                     break;
             }
         }
-        $lastFile = end($fileList);
-        $revision = $lastFile ? $lastFile['fileRevision'] : $dbVersion;
+        $revision = end($fileList);
+        $revision = $revision['fileRevision'];
 
         Database::get()->update("UPDATE %%SYSTEM%% SET dbVersion = " . DB_VERSION_REQUIRED . ";");
 
@@ -494,10 +511,6 @@ switch ($mode) {
 						$installRevision,
                         DB_VERSION_REQUIRED
 					), $installSQL));
-
-					$db->nativeQuery('SET autocommit=1');
-					$migration = require ROOT_PATH.'install/migrations/migration_8.php';
-					$migration($db);
 
 					$config = Config::get(Universe::current());
 					$config->timezone			= @date_default_timezone_get();

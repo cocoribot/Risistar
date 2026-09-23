@@ -73,8 +73,35 @@ class Session
 
 	static public function getClientIp()
     {
-		$address = $_SERVER['REMOTE_ADDR'] ?? '';
-		return filter_var($address, FILTER_VALIDATE_IP) ? $address : 'UNKNOWN';
+		if(!empty($_SERVER['HTTP_CLIENT_IP']))
+        {
+            $ipAddress = $_SERVER['HTTP_CLIENT_IP'];
+        }
+		elseif(!empty($_SERVER['HTTP_X_FORWARDED_FOR']))
+        {
+			$ipAddress = $_SERVER['HTTP_X_FORWARDED_FOR'];
+        }
+        elseif(!empty($_SERVER['HTTP_X_FORWARDED']))
+        {
+			$ipAddress = $_SERVER['HTTP_X_FORWARDED'];
+        }
+        elseif(!empty($_SERVER['HTTP_FORWARDED_FOR']))
+        {
+			$ipAddress = $_SERVER['HTTP_FORWARDED_FOR'];
+        }
+        elseif(!empty($_SERVER['HTTP_FORWARDED']))
+        {
+			$ipAddress = $_SERVER['HTTP_FORWARDED'];
+        }
+        elseif(!empty($_SERVER['REMOTE_ADDR']))
+        {
+			$ipAddress = $_SERVER['REMOTE_ADDR'];
+        }
+        else
+        {
+			$ipAddress = 'UNKNOWN';
+        }
+        return $ipAddress;
 	}
 
 	/**

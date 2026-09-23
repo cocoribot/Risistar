@@ -444,9 +444,6 @@ function clearGIF() {
  */
 function exceptionHandler($exception)
 {
-	if (class_exists('GameRequest', false)) {
-		GameRequest::fail();
-	}
 	/** @var $exception ErrorException|Exception */
 //	include 'classes/Config.class.php';	
 	if(!headers_sent()) {
