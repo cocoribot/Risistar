@@ -32,7 +32,7 @@ if (function_exists('mb_internal_encoding')) {
 }
 
 ignore_user_abort(true);
-error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
+error_reporting(E_ALL & ~E_STRICT & ~E_DEPRECATED & ~E_USER_DEPRECATED);
 
 // If date.timezone is invalid
 date_default_timezone_set(@date_default_timezone_get());

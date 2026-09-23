@@ -882,7 +882,7 @@ CREATE TABLE `%PREFIX%system` (
 --
 
 INSERT INTO `%PREFIX%system` (`dbVersion`) VALUES
-(7);
+(8);
 
 -- --------------------------------------------------------
 
