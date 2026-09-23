@@ -224,12 +224,12 @@ $.widget("custom.catcomplete", $.ui.autocomplete, {
 });
 
 $(function() {
-    // The marker describes this automatic request only, not a later manual refresh.
-    var currentUrl = new URL(window.location.href);
-    if (currentUrl.searchParams.has('passive_reload')) {
-        currentUrl.searchParams.delete('passive_reload');
-        window.history.replaceState(null, '', currentUrl.href);
-    }
+	// The marker describes this automatic request only, not a later manual refresh.
+	var currentUrl = new URL(window.location.href);
+	if (currentUrl.searchParams.has('passive_reload')) {
+		currentUrl.searchParams.delete('passive_reload');
+		window.history.replaceState(null, '', currentUrl.href);
+	}
 	$('#drop-admin').on('click', function() {
 		$.get('admin.php?page=logout', function() {
 			$('.globalWarning').animate({

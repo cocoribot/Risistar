@@ -9,7 +9,7 @@ final class TelemetryConnection
 	public static function configure(array $game, array $telemetry): void
 	{
 		self::$shared = empty($telemetry['databasename']);
-		self::$configuration = self::$shared ? array_replace($game, ['enabled' => $telemetry['enabled'] ?? true]) : $telemetry;
+		self::$configuration = self::$shared ? $game : $telemetry;
 		self::$prefix = self::$shared ? $game['tableprefix'] : ($telemetry['tableprefix'] ?? '');
 	}
 
@@ -31,15 +31,10 @@ final class TelemetryConnection
 	{
 		self::configuration();
 		$tables = [];
-		foreach (['daily', 'events', 'warnings', 'audit'] as $name) {
+		foreach (['daily', 'events', 'network', 'pairs', 'warnings', 'audit'] as $name) {
 			$tables['%%TELEMETRY_' . strtoupper($name) . '%%'] = '`' . str_replace('`', '``', self::$prefix) . 'telemetry_' . $name . '`';
 		}
 		return $tables;
-	}
-
-	public static function masterEnabled(): bool
-	{
-		return !empty(self::configuration()['enabled']);
 	}
 
 	public static function open(): PDO
@@ -50,7 +45,7 @@ final class TelemetryConnection
 				throw new RuntimeException('Telemetry connection is incomplete.');
 			}
 		}
-		// A separate connection also keeps shared-database telemetry out of gameplay transactions.
+		// A separate connection keeps telemetry out of game transactions, even in the same database.
 		$previous = ini_set('mysqlnd.net_read_timeout', '2');
 		try {
 			$db = new PDO('mysql:host=' . $c['host'] . ';port=' . (int)$c['port']

@@ -47,7 +47,7 @@ border:0px;background:url(./styles/resource/images/admin/blank.gif);text-align:r
 			<tr><th colspan="2">&nbsp;</th></tr>
 			<tr><td height="22px">{$input_id}</td><td>{$id}</td></tr>
 			<tr><td height="22px">{$ac_name}</td><td>{$nombre}</td></tr>
-            {if allowedTo('ShowTelemetryPage')}<tr><td>{$LNG.modul_43}</td><td><a href="?page=telemetry&amp;account={$id}">{$LNG.modul_43}</a></td></tr>{/if}
+			{if allowedTo('ShowTelemetryPage')}<tr><td>{$LNG.modul_43}</td><td><a href="?page=telemetry&amp;account={$id}">{$LNG.modul_43}</a></td></tr>{/if}
 			<tr><td height="22px">{$ac_mail}</td><td>{$email_1}</td></tr>
 			<tr><td height="22px">{$ac_perm_mail}</td><td>{$email_2}</td></tr>
 			<tr><td height="22px">{$ac_auth_level}</td><td>{$nivel}</td></tr>

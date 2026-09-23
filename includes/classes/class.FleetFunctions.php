@@ -706,8 +706,7 @@ class FleetFunctions
 			':universe'	   				=> Universe::current(),
 		));
 		if (class_exists('PlayerTelemetry', false)) {
-			PlayerTelemetry::action('fleet.send', (int)$fleetTargetOwner, (int)$fleetId,
-				['mission' => (int)$fleetMission, 'planet' => (int)$fleetTargetPlanetID]);
+			PlayerTelemetry::action('fleet.send');
 		}
 	}
 }

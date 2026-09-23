@@ -1,15 +1,21 @@
 <?php
 
-/** Deterministic rules; callers supply a clock, bounded rows and settings. */
+/** Detection rules only: the caller gives the time, the events and the settings. */
 final class TelemetryDetectors
 {
+	// Fast human clicking is regular too; only slower rhythms count.
+	private const MIN_GAP_SECONDS = 10;
+	// Idle runs made mostly of alliance page views are reported as alliance watching.
+	private const ALLIANCE_SHARE = 0.8;
+	// A loop that waits 20 s then 40 s has two peaks; more would also match reloads by hand.
+	private const MAX_PEAKS = 2;
+
 	private static function finding(string $kind, string $strength, array $rows, array $metrics): array
 	{
 		$times = array_column($rows, 'at');
 		return [
 			'kind' => $kind,
 			'strength' => $strength,
-			'explanation' => $kind,
 			'from' => $times ? min($times) : 0,
 			'to' => $times ? max($times) : 0,
 			'metrics' => $metrics,
@@ -17,292 +23,290 @@ final class TelemetryDetectors
 		];
 	}
 
-	public static function availability(array $daily, array $s, int $now): array
+	public static function availability(array $daily, array $settings, int $now): array
 	{
 		$days = [];
 		$timeline = [];
-		$end = strtotime(gmdate('Y-m-d', $now) . ' UTC');
+		$today = strtotime(gmdate('Y-m-d', $now) . ' UTC');
 		$windows = TelemetryActivity::windows($daily);
-		for ($at = $end - $s['activity_days'] * 86400; $at < $end; $at += 86400) {
-			$intervals = TelemetryActivity::intervals($windows, $at, $at + 86400);
-			$seconds = 0;
-			$previous = $at;
-			$gap = 0;
-			foreach ($intervals as [$first, $last]) {
-				$seconds += $last - $first;
-				$gap = max($gap, $first - $previous);
-				$previous = $last;
-			}
-			$gap = max($gap, $at + 86400 - $previous);
-			$metrics = ['day' => gmdate('Y-m-d', $at), 'active_seconds' => $seconds, 'largest_gap_seconds' => $gap];
-			if ($seconds >= $s['activity_hours'] * 3600) {
+		for ($dayStart = $today - $settings['activity_days'] * 86400; $dayStart < $today; $dayStart += 86400) {
+			$intervals = TelemetryActivity::intervals($windows, $dayStart, $dayStart + 86400);
+			$metrics = ['day' => gmdate('Y-m-d', $dayStart)] + self::dayActivity($intervals, $dayStart);
+			if ($metrics['active_seconds'] >= $settings['activity_hours'] * 3600) {
 				$days[] = $metrics;
 			}
 			if ($intervals) {
-				$timeline[] = ['at' => $at, 'data' => $metrics + ['windows' => $intervals]];
+				$timeline[] = ['at' => $dayStart, 'data' => $metrics + ['windows' => $intervals]];
 			}
 		}
 		if (!$days) {
 			return [];
 		}
-		$short = count(array_filter($days, static fn($d) => $d['largest_gap_seconds'] <= $s['activity_gap_hours'] * 3600));
-		return [self::finding(
-			'availability',
-			count($days) >= $s['activity_min_days'] ? 'moderate' : 'weak',
-			$timeline,
-			['days' => $days, 'short_gap_days' => $short, 'required_days' => $s['activity_min_days']]
-		)];
+		$shortGapDays = array_filter(
+			$days,
+			static fn($day) => $day['largest_gap_seconds'] <= TelemetrySettings::ACTIVITY_GAP_HOURS * 3600
+		);
+		$strength = count($days) >= $settings['activity_min_days'] ? 'moderate' : 'weak';
+		return [self::finding('availability', $strength, $timeline, [
+			'days' => $days,
+			'short_gap_days' => count($shortGapDays),
+			'required_days' => $settings['activity_min_days'],
+		])];
 	}
 
-	public static function readerActions(array $events): array
+	private static function dayActivity(array $intervals, int $dayStart): array
 	{
-		$unique = [];
-		foreach ($events as $e) {
-			if (empty($e['interactive']) || $e['kind'] === 'interaction' || ($e['result'] ?? 'success') !== 'success') {
+		$seconds = 0;
+		$largestGap = 0;
+		$previousEnd = $dayStart;
+		foreach ($intervals as [$first, $last]) {
+			$seconds += $last - $first;
+			$largestGap = max($largestGap, $first - $previousEnd);
+			$previousEnd = $last;
+		}
+		$largestGap = max($largestGap, $dayStart + 86400 - $previousEnd);
+		return ['active_seconds' => $seconds, 'largest_gap_seconds' => $largestGap];
+	}
+
+	/** Days where most gaps between requests repeat the same few durations, like a script would. */
+	public static function automation(array $daily, array $settings, int $now): array
+	{
+		$since = gmdate('Y-m-d', $now - $settings['automation_days'] * 86400);
+		$days = [];
+		foreach ($daily as $row) {
+			if ($row['day'] < $since) {
 				continue;
 			}
-			// Count each action kind once per request.
-			$key = $e['request_id'] . ':' . $e['kind'];
-			$unique[$key] ??= $e;
+			$rhythm = self::rhythm(json_decode($row['gaps'], true), $settings);
+			if ($rhythm['observations'] >= $settings['timing_min'] && $rhythm['share'] >= $settings['timing_share']) {
+				$days[] = ['at' => strtotime($row['day'] . ' UTC'), 'kind' => 'timing', 'data' => ['day' => $row['day']] + $rhythm];
+			}
 		}
-		$rows = array_values($unique);
-		usort($rows, static fn($a, $b) => $a['at'] <=> $b['at']);
-		return $rows;
+		if (!$days) {
+			return [];
+		}
+		return [self::finding('timing', 'moderate', $days, ['days' => array_column($days, 'data')])];
 	}
 
-	public static function automation(array $events, array $s, int $now): array
+	/**
+	 * Hours in a row of loads that keep the planets active (*) and nothing else, on several days,
+	 * even with random waits. Each run shows its loads per hour and its waits.
+	 */
+	public static function refreshing(array $daily, array $settings, int $now): array
 	{
-		$events = array_values(array_filter($events, static fn($e) => $e['at'] >= $now - $s['automation_days'] * 86400));
-		$actions = self::readerActions($events);
-		$findings = [];
-		$n = count($actions);
-		if ($n >= $s['timing_min']) {
-			$deltas = [];
-			for ($i = 1; $i < $n; ++$i) {
-				$delta = $actions[$i]['at'] - $actions[$i - 1]['at'];
-				if ($delta > 0 && $delta < 3600) {
-					$deltas[] = $delta;
+		$idle = [];
+		foreach ($daily as $row) {
+			foreach (json_decode($row['hours'], true) as $hour => [$loads, $switches, $busy, $alliance, $shortest, $longest]) {
+				$at = strtotime($row['day'] . ' UTC') + $hour * 3600;
+				if ($at >= $now - $settings['automation_days'] * 86400 && $loads >= $settings['refresh_per_hour'] && $busy === 0) {
+					$idle[$at] = [$loads, $switches, $alliance, $shortest, $longest];
 				}
-			}
-			$best = ['share' => 0];
-			for ($period = 1; $period <= 4; ++$period) {
-				$matches = 0;
-				$medians = [];
-				for ($phase = 0; $phase < $period; ++$phase) {
-					$values = [];
-					for ($i = $phase; $i < count($deltas); $i += $period) {
-						$values[] = $deltas[$i];
-					}
-					sort($values);
-					if (!$values) {
-						continue;
-					}
-					$median = $values[intdiv(count($values), 2)];
-					if ($median < 10) {
-						$matches = 0;
-						break;
-					}
-					$medians[] = $median;
-					$matches += count(array_filter($values, static fn($v) => abs($v - $median) <= max(1, $median * $s['timing_tolerance'])));
-				}
-				$share = $matches / max(1, count($deltas));
-				if ($share > $best['share']) {
-					$best = ['share' => $share, 'period' => $period, 'seconds' => $medians, 'observations' => count($deltas)];
-				}
-			}
-			if (($best['observations'] ?? 0) >= $s['timing_min'] - 1 && $best['share'] >= $s['timing_share']) {
-				$findings[] = self::finding(
-					'timing',
-					'moderate',
-					$actions,
-					$best
-				);
 			}
 		}
-		$symbols = array_map(static fn($e) => $e['kind'] . ':' . ($e['data']['command'] ?? $e['data']['mission'] ?? ''), $actions);
-		$best = ['repeats' => 0, 'share' => 0];
-		for ($length = 2; $length <= 5 && $length <= $n; ++$length) {
-			$candidates = [];
-			for ($i = 0; $i < min($n - $length + 1, 1000); ++$i) {
-				$pattern = array_slice($symbols, $i, $length);
-				if (count(array_unique($pattern)) < 2) {
+		ksort($idle);
+		$runs = [];
+		foreach ($idle as $at => [$loads, $switches, $alliance, $shortest, $longest]) {
+			$last = array_key_last($runs);
+			// Consecutive hours join the same run, also across midnight.
+			if ($last !== null && $runs[$last]['to'] === $at) {
+				$run = &$runs[$last];
+				$run['to'] += 3600;
+				$run['loads'] += $loads;
+				$run['switches'] += $switches;
+				$run['alliance'] += $alliance;
+				$run['per_hour'][] = $loads;
+				$run['shortest_wait'] = TelemetryActivity::shortest($run['shortest_wait'], $shortest);
+				$run['longest_wait'] = max($run['longest_wait'], $longest);
+				unset($run);
+			} else {
+				$runs[] = [
+					'from' => $at, 'to' => $at + 3600, 'loads' => $loads, 'switches' => $switches, 'alliance' => $alliance,
+					'per_hour' => [$loads], 'shortest_wait' => $shortest, 'longest_wait' => $longest,
+				];
+			}
+		}
+		$runs = array_values(array_filter(
+			$runs,
+			static fn($run) => $run['to'] - $run['from'] >= $settings['refresh_hours'] * 3600
+		));
+		$days = array_unique(array_map(static fn($run) => gmdate('Y-m-d', $run['from']), $runs));
+		if (count($days) < $settings['refresh_days']) {
+			return [];
+		}
+		$watching = array_sum(array_column($runs, 'alliance')) >= self::ALLIANCE_SHARE * array_sum(array_column($runs, 'loads'));
+		$kind = $watching ? 'alliance_watch' : 'refreshing';
+		$timeline = array_map(
+			static fn($run) => ['at' => $run['from'], 'kind' => $kind, 'data' => $run + [
+				'idle_hours' => ($run['to'] - $run['from']) / 3600,
+				'average_wait' => intdiv($run['to'] - $run['from'], $run['loads']),
+			]],
+			$runs
+		);
+		return [self::finding($kind, 'moderate', $timeline, ['days' => count($days), 'required_days' => $settings['refresh_days']])];
+	}
+
+	/** Takes the biggest group of close gaps, then the next one, until they cover the required share. */
+	private static function rhythm(array $gaps, array $settings): array
+	{
+		$total = array_sum($gaps);
+		$width = (int) round(log(1 + $settings['timing_tolerance']) / log(TelemetryActivity::GAP_STEP));
+		$seconds = [];
+		$covered = 0;
+		while (count($seconds) < self::MAX_PEAKS && $covered < $settings['timing_share'] * $total) {
+			$best = null;
+			$bestCount = 0;
+			foreach (array_keys($gaps) as $center) {
+				if (TelemetryActivity::gapSeconds($center) < self::MIN_GAP_SECONDS) {
 					continue;
 				}
-				$key = implode('|', $pattern);
-				$candidates[$key] = $pattern;
-				if (count($candidates) >= 100) {
-					break;
+				$count = array_sum(array_intersect_key($gaps, array_flip(range($center - $width, $center + $width))));
+				if ($count > $bestCount) {
+					[$best, $bestCount] = [$center, $count];
 				}
 			}
-			foreach ($candidates as $pattern) {
-				$repeats = 0;
-				$starts = [];
-				for ($i = 0; $i < $n;) {
-					$j = $i;
-					$matched = 0;
-					$extra = 0;
-					while ($j < $n && $matched < $length && $extra <= 1) {
-						if ($symbols[$j] === $pattern[$matched]) {
-							++$matched;
-						} else {
-							++$extra;
-						}
-						++$j;
-					}
-					if ($matched === $length && $extra <= 1) {
-						++$repeats;
-						$starts[] = $actions[$i]['at'];
-						$i = $j;
-					} else {
-						++$i;
-					}
-				}
-				$share = $repeats * $length / max(1, $n);
-				if ($repeats >= $s['workflow_min'] && $share > $best['share']) {
-					$best = ['repeats' => $repeats, 'share' => $share, 'pattern' => $pattern, 'starts' => $starts];
-				}
+			if ($best === null) {
+				break;
 			}
+			$gaps = array_diff_key($gaps, array_flip(range($best - $width, $best + $width)));
+			$seconds[] = (int) round(TelemetryActivity::gapSeconds($best));
+			$covered += $bestCount;
 		}
-		if (in_array('timing', array_column($findings, 'kind'), true) && $best['repeats'] >= $s['workflow_min'] && $best['share'] >= $s['workflow_share']) {
-			$findings[] = self::finding('workflow', 'moderate', $actions, $best);
-		}
-		$reads = array_values(array_filter($actions, static fn($e) => $e['kind'] === 'galaxy.view'));
-		if (count($reads) >= $s['poll_min'] && end($reads)['at'] - $reads[0]['at'] >= $s['poll_span_hours'] * 3600) {
-			$findings[] = self::finding(
-				'polling',
-				'weak',
-				$reads,
-				['checks' => count($reads), 'span_seconds' => end($reads)['at'] - $reads[0]['at']]
-			);
-		}
-		$steps = 0;
-		$maxSteps = 0;
-		$previous = null;
-		foreach ($reads as $read) {
-			if ($read['kind'] !== 'galaxy.view') {
-				continue;
-			}
-			$coord = $read['data'];
-			$steps = $previous && ($coord['galaxy'] ?? null) === ($previous['galaxy'] ?? null) && abs(($coord['system'] ?? -100) - ($previous['system'] ?? 100)) === 1 ? $steps + 1 : 1;
-			$maxSteps = max($maxSteps, $steps);
-			$previous = $coord;
-		}
-		if ($maxSteps >= $s['traversal_min']) {
-			$findings[] = self::finding(
-				'traversal',
-				'weak',
-				$reads,
-				['consecutive_systems' => $maxSteps]
-			);
-		}
-		$support = array_column($findings, 'kind');
-		foreach ($findings as &$finding) {
-			$finding['supporting_checks'] = $support;
-		}
-		return $findings;
+		return ['share' => $total ? $covered / $total : 0, 'seconds' => $seconds, 'observations' => $total];
 	}
 
-	private static function value(array $resources, float $metal, float $crystal): float
+	public static function pushing(array $events, int $accountA, int $accountB, array $points, array $settings, int $now): array
 	{
-		return ($resources['metal'] ?? 0) / $metal + ($resources['crystal'] ?? 0) / $crystal + ($resources['deuterium'] ?? 0);
-	}
-	public static function favorable(array $sent, array $returned, array $s): array
-	{
-		$net = [];
-		foreach (['metal', 'crystal', 'deuterium'] as $r) {
-			$net[$r] = (1 - $s['imbalance_allowance']) * ($sent[$r] ?? 0) - ($returned[$r] ?? 0);
-		}
-		// Each resource has an independent allowed range; choose the least suspicious valuation.
-		$metal = $s[$net['metal'] >= 0 ? 'rate_metal_max' : 'rate_metal_min'];
-		$crystal = $s[$net['crystal'] >= 0 ? 'rate_crystal_max' : 'rate_crystal_min'];
-		return [
-			'remaining' => self::value($net, $metal, $crystal),
-			'sent_value' => self::value($sent, $metal, $crystal),
-			'returned_value' => self::value($returned, $metal, $crystal),
-			'rate' => [$metal, $crystal, 1],
-		];
-	}
-
-	public static function pushing(array $events, int $a, int $b, array $points, array $s, int $now): array
-	{
+		$since = $now - TelemetrySettings::deliveryDays($settings) * 86400;
 		$deliveries = array_values(array_filter(
 			$events,
-			static fn($e) => $e['kind'] === 'delivery' && $e['at'] >= $now - TelemetrySettings::deliveryDays($s) * 86400
+			static fn($event) => $event['kind'] === 'delivery' && $event['at'] >= $since
 		));
-		usort($deliveries, static fn($x, $y) => $x['at'] <=> $y['at']);
 		if (!$deliveries) {
 			return [];
 		}
+		usort($deliveries, static fn($a, $b) => $a['at'] <=> $b['at']);
+		$debts = self::debts($deliveries, $settings);
+		$recent = $now - $settings['push_days'] * 86400;
+		$due = $now - $settings['repayment_hours'] * 3600;
 		$findings = [];
-		foreach ([[$a, $b], [$b, $a]] as [$sender, $recipient]) {
-			$sent = ['metal' => 0, 'crystal' => 0, 'deuterium' => 0];
-			$overdue = $sent;
-			$returned = $sent;
-			$oldest = null;
-			$first = null;
-			foreach ($deliveries as $delivery) {
-				$isSent = (int) $delivery['actor'] === $sender;
-				if ($isSent && $delivery['at'] < $now - $s['push_days'] * 86400) {
-					continue;
-				}
-				if ($isSent) {
-					$first ??= $delivery['at'];
-				}
-				foreach (array_keys($sent) as $r) {
-					$amount = max(0, (float) ($delivery['data'][$r] ?? 0));
-					if ($isSent) {
-						$sent[$r] += $amount;
-						if ($delivery['at'] + $s['repayment_hours'] * 3600 <= $now) {
-							$overdue[$r] += $amount;
-							if ($amount > 0) {
-								$oldest ??= $delivery['at'];
-							}
-						}
-					} else {
-						$returned[$r] += $amount;
-					}
-				}
-			}
-			$minimum = max($s['push_minimum'], ($points[$recipient] ?? 0) * 1000 * $s['push_points_fraction'] / $s['rate_metal_max']);
-			$balance = self::favorable($overdue, $returned, $s);
-			$total = self::favorable($sent, $returned, $s);
-			if ($balance['remaining'] <= $minimum) {
+		foreach ([[$accountA, $accountB], [$accountB, $accountA]] as [$sender, $recipient]) {
+			$overdue = array_filter(
+				$debts[$sender] ?? [],
+				static fn($debt) => $debt['at'] >= $recent && $debt['at'] <= $due
+			);
+			$unpaid = array_sum(array_column($overdue, 'unpaid'));
+			$remaining = array_sum(array_map(
+				static fn($debt) => max(0, $debt['unpaid'] - $settings['imbalance_allowance'] * $debt['value']),
+				$overdue
+			));
+			$minimum = max(
+				$settings['push_minimum'],
+				($points[$recipient] ?? 0) * 1000 * $settings['push_points_fraction'] / $settings['rate_metal_max']
+			);
+			if (!$overdue || $remaining <= $minimum) {
 				continue;
 			}
-			$context = [];
-			foreach ($events as $e) {
-				if ($e['kind'] !== 'combat' || empty($e['data']['moon_chance'])) {
-					continue;
-				}
-				foreach ($deliveries as $d) {
-					if (abs($d['at'] - $e['at']) <= $s['moon_context_hours'] * 3600 && ($d['data']['planet'] ?? 0) === ($e['data']['planet'] ?? -1)) {
-						$context[] = $e;
-						break;
-					}
-				}
-			}
-			$finding = self::finding(
+			$combats = self::moonCombats($events, $deliveries, $settings);
+			$findings[] = self::finding(
 				'pushing.' . $recipient,
-				$context ? 'uncertain' : 'moderate',
-				array_merge($deliveries, $context),
+				$combats ? 'uncertain' : 'moderate',
+				array_merge($deliveries, $combats),
 				[
 					'sender' => $sender,
 					'recipient' => $recipient,
-					'sent' => $sent,
-					'overdue_sent' => $overdue,
-					'returned' => $returned,
-					'balance' => $balance,
-					'total_balance' => $total,
+					'sent' => self::totals($deliveries, $sender),
+					'returned' => self::totals($deliveries, $recipient),
+					'balance' => ['unpaid' => $unpaid, 'remaining' => $remaining],
 					'minimum' => $minimum,
-					'awaiting_repayment' => false,
-					'deadline' => ($oldest ?? $first) + $s['repayment_hours'] * 3600,
-					'allowed_rates' => [[$s['rate_metal_min'], $s['rate_crystal_min'], 1], [$s['rate_metal_max'], $s['rate_crystal_max'], 1]],
-					'allowance' => $s['imbalance_allowance'],
-					'combat_context' => $context,
+					'deadline' => min(array_column($overdue, 'at')) + $settings['repayment_hours'] * 3600,
+					'allowed_rates' => [
+						[$settings['rate_metal_min'], $settings['rate_crystal_min'], 1],
+						[$settings['rate_metal_max'], $settings['rate_crystal_max'], 1],
+					],
+					'allowance' => $settings['imbalance_allowance'],
+					'combat_context' => $combats,
 				]
 			);
-			$findings[] = $finding;
 		}
 		return $findings;
+	}
+
+	/**
+	 * Goes through the deliveries in time order. Each one first pays back what the other player
+	 * still owes for sends made up to push_days before, oldest first. The rest is a new debt,
+	 * but only the part that is more than what was paid back at any allowed rate.
+	 */
+	private static function debts(array $deliveries, array $settings): array
+	{
+		$debts = [];
+		foreach ($deliveries as $delivery) {
+			$sender = (int) $delivery['actor'];
+			$other = (int) $delivery['target'];
+			[$low, $high] = self::values(TelemetryStore::delivered($delivery['data']), $settings);
+			if ($low <= 0) {
+				continue;
+			}
+			$payment = $high;
+			$paidBack = 0.0;
+			foreach ($debts[$other] ?? [] as $index => $debt) {
+				if ($payment <= 0 || $debt['unpaid'] <= 0 || $debt['at'] < $delivery['at'] - $settings['push_days'] * 86400) {
+					continue;
+				}
+				$share = min(1, $payment / $debt['unpaid']);
+				$payment -= $share * $debt['unpaid'];
+				$paidBack += $share * $debt['unpaid_high'];
+				$debts[$other][$index]['unpaid'] *= 1 - $share;
+				$debts[$other][$index]['unpaid_high'] *= 1 - $share;
+			}
+			$gift = $low - $paidBack;
+			if ($gift > 0) {
+				// The allowance is a share of the whole delivery, not only of the unpaid part.
+				$debts[$sender][] = ['at' => (int) $delivery['at'], 'unpaid' => $gift, 'unpaid_high' => $gift * $high / $low, 'value' => $low];
+			}
+		}
+		return $debts;
+	}
+
+	/** Deuterium value at the rates least and most favorable to the players. */
+	private static function values(array $resources, array $settings): array
+	{
+		$value = static fn($metalRate, $crystalRate) => $resources['metal'] / $metalRate
+			+ $resources['crystal'] / $crystalRate
+			+ $resources['deuterium'];
+		return [
+			$value($settings['rate_metal_max'], $settings['rate_crystal_max']),
+			$value($settings['rate_metal_min'], $settings['rate_crystal_min']),
+		];
+	}
+
+	private static function totals(array $deliveries, int $sender): array
+	{
+		$totals = ['metal' => 0.0, 'crystal' => 0.0, 'deuterium' => 0.0];
+		foreach ($deliveries as $delivery) {
+			if ((int) $delivery['actor'] === $sender) {
+				foreach (TelemetryStore::delivered($delivery['data']) as $resource => $amount) {
+					$totals[$resource] += $amount;
+				}
+			}
+		}
+		return $totals;
+	}
+
+	/** A combat with a moon chance between the two players, close to a delivery, may explain it. */
+	private static function moonCombats(array $events, array $deliveries, array $settings): array
+	{
+		$combats = [];
+		foreach ($events as $event) {
+			if ($event['kind'] !== 'combat' || empty($event['data']['moon_chance'])) {
+				continue;
+			}
+			foreach ($deliveries as $delivery) {
+				if (abs($delivery['at'] - $event['at']) <= $settings['moon_context_hours'] * 3600) {
+					$combats[] = $event;
+					break;
+				}
+			}
+		}
+		return $combats;
 	}
 }

@@ -27,7 +27,6 @@ $salt						= '%s'; // 22 digits from the alphabet "./0-9A-Za-z"
 
 // Optional separate database; otherwise telemetry uses the game database.
 // $telemetry = [
-//     'enabled' => true,
 //     'host' => 'localhost',
 //     'port' => 3306,
 //     'databasename' => '',

@@ -187,7 +187,7 @@ class ShowFleetTablePage extends AbstractGamePage
 			switch($GetAction){
 				case "sendfleetback":
 					if (FleetFunctions::SendFleetBack($USER, $FleetID)) {
-						PlayerTelemetry::action('fleet.recall', 0, (int)$FleetID);
+						PlayerTelemetry::action('fleet.recall');
 					}
 				break;
 				case "acs":

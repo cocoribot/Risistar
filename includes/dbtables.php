@@ -23,6 +23,8 @@ define('DB_PREFIX'			, $database['tableprefix']);
 $dbTableNames	= array(
 	'TELEMETRY_DAILY' => DB_PREFIX.'telemetry_daily',
 	'TELEMETRY_EVENTS' => DB_PREFIX.'telemetry_events',
+	'TELEMETRY_NETWORK' => DB_PREFIX.'telemetry_network',
+	'TELEMETRY_PAIRS' => DB_PREFIX.'telemetry_pairs',
 	'TELEMETRY_WARNINGS' => DB_PREFIX.'telemetry_warnings',
 	'TELEMETRY_AUDIT' => DB_PREFIX.'telemetry_audit',
 	'AKS'				=> DB_PREFIX.'aks',

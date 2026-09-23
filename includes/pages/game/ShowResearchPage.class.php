@@ -375,7 +375,7 @@ class ShowResearchPage extends AbstractGamePage
 			}
 			
 			if ($telemetryBefore !== $USER['b_tech_queue']) {
-				PlayerTelemetry::action('queue.research', 0, 0, ['command' => $TheCommand]);
+				PlayerTelemetry::action('queue.research');
 			}
 			$this->redirectTo('game.php?page=research');
 		}

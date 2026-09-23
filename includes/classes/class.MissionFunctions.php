@@ -114,7 +114,45 @@ class MissionFunctions
 
 		$db->update($sql, $param);
 
+		// A merchant can station a fleet on another player's planet: ships and cargo change owner.
+		if (!$onStart && $db->rowCount() > 0) {
+			$this->recordDelivery($planetId, $fleetData);
+		}
+
 		$this->KillFleet();
+	}
+
+	/** Resources or ships left on another player's planet, for the telemetry module. */
+	private function recordDelivery($planetId, array $ships = array())
+	{
+		global $pricelist;
+		$universe = (int)$this->_fleet['fleet_universe'];
+		if (!class_exists('PlayerTelemetry', false) || !PlayerTelemetry::enabled($universe)) {
+			return;
+		}
+		$recipient = (int)Database::get()->selectSingle('SELECT id_owner FROM %%PLANETS%% WHERE id=:id',
+			[':id'=>$planetId], 'id_owner');
+		if ($recipient === (int)$this->_fleet['fleet_owner']) {
+			return;
+		}
+		$data = [
+			'metal' => (float)$this->_fleet['fleet_resource_metal'],
+			'crystal' => (float)$this->_fleet['fleet_resource_crystal'],
+			'deuterium' => (float)$this->_fleet['fleet_resource_deuterium'],
+			'planet' => (int)$planetId,
+			'mission' => (int)$this->_fleet['fleet_mission'],
+		];
+		if ($ships) {
+			$data['ships'] = $ships;
+			$data['ship_value'] = ['metal' => 0, 'crystal' => 0, 'deuterium' => 0];
+			foreach ($ships as $shipId => $amount) {
+				$data['ship_value']['metal'] += $pricelist[$shipId]['cost'][901] * $amount;
+				$data['ship_value']['crystal'] += $pricelist[$shipId]['cost'][902] * $amount;
+				$data['ship_value']['deuterium'] += $pricelist[$shipId]['cost'][903] * $amount;
+			}
+		}
+		PlayerTelemetry::record((int)$this->_fleet['fleet_owner'], $universe, 'delivery', $recipient,
+			(int)$this->_fleet['fleet_id'], $data, false, (int)$this->_fleet['fleet_start_time']);
 	}
 	
 	function StoreGoodsToPlanet($onStart = false)
@@ -138,19 +176,8 @@ class MissionFunctions
 		 	':planetId'		=> $planetId
 		));
 
-		if (!$onStart && (int)$this->_fleet['fleet_mission'] === 3 && $db->rowCount() > 0
-			&& class_exists('PlayerTelemetry', false) && PlayerTelemetry::enabled((int)$this->_fleet['fleet_universe'])) {
-			$recipient = (int)$db->selectSingle('SELECT id_owner FROM %%PLANETS%% WHERE id=:id',
-				[':id'=>$planetId], 'id_owner');
-			if ($recipient !== (int)$this->_fleet['fleet_owner']) {
-				PlayerTelemetry::record((int)$this->_fleet['fleet_owner'], (int)$this->_fleet['fleet_universe'],
-					'delivery', $recipient, (int)$this->_fleet['fleet_id'], [
-						'metal' => (float)$this->_fleet['fleet_resource_metal'],
-						'crystal' => (float)$this->_fleet['fleet_resource_crystal'],
-						'deuterium' => (float)$this->_fleet['fleet_resource_deuterium'],
-						'planet' => (int)$planetId,
-					], false, (int)$this->_fleet['fleet_start_time']);
-			}
+		if (!$onStart && (int)$this->_fleet['fleet_mission'] === 3 && $db->rowCount() > 0) {
+			$this->recordDelivery($planetId);
 		}
 
 		$this->UpdateFleet('fleet_resource_metal', '0');

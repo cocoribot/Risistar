@@ -1,209 +1,127 @@
 <?php
 
-final class TelemetryStore
+class TelemetryStore
 {
-	public int $queries = 0;
+	public const PAGE_SIZE = 50;
+
+	private const EVENT_COLUMNS = ['universe', 'actor', 'target', 'pair_a', 'pair_b', 'at', 'kind', 'data'];
+	// Only exchanges between players are kept one by one; everything else is counted per day.
+	private const EVIDENCE_KINDS = ['delivery', 'combat'];
+	// Loads that keep the planet activity (*) alive or watch fleets, without playing.
+	private const KEEP_ALIVE_KINDS = ['reload', 'planet.switch', 'alliance.view', 'passive'];
+	private const UNAVAILABLE = ['unavailable' => true, 'suspended' => true, 'failure' => 'health_unavailable'];
+
 	public function __construct(public PDO $db)
 	{
 	}
 
 	public function query(string $sql, array $values = []): PDOStatement
 	{
-		++$this->queries;
 		$stmt = $this->db->prepare(strtr($sql, TelemetryConnection::tables()));
 		$stmt->execute($values);
 		return $stmt;
 	}
 
-	public static function health(array|callable $change = []): array
+	/** Small shared state: when to retry, the measured space, and where the analysis stopped. */
+	public static function health(array $change = []): array
 	{
 		$directory = (defined('CACHE_PATH') ? CACHE_PATH : ROOT_PATH . 'cache/') . 'telemetry/';
 		if (!is_dir($directory)) {
 			@mkdir($directory, 0770, true);
 		}
-		$collecting = is_array($change) && (isset($change['reserve_bytes']) || isset($change['gap_start']));
-		$path = $directory . 'health.json';
-		$handle = @fopen($path, 'c+');
-		$readOnly = $change === [];
-		$deadline = microtime(true) + 0.1;
-		while ($handle && !flock($handle, ($readOnly ? LOCK_SH : LOCK_EX) | LOCK_NB)) {
-			if (microtime(true) >= $deadline) {
-				fclose($handle);
-				$handle = false;
-				break;
-			}
-			usleep(2000);
-		}
-		if (!$handle) {
-			return self::healthUnavailable($directory, $collecting);
+		$lock = @fopen($directory . 'health.lock', 'c');
+		if (!$lock || !flock($lock, $change ? LOCK_EX : LOCK_SH)) {
+			// Without this file the used space is unknown, so collection stays paused.
+			return self::UNAVAILABLE;
 		}
 		try {
-			$json = stream_get_contents($handle);
-			$state = $json === '' ? ['gaps' => []] : json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-			$config = TelemetryConnection::configuration();
-			$backend = hash('sha256', json_encode([$config['host'], $config['port'], $config['databasename'], TelemetryConnection::tables()]));
-			if (($state['backend'] ?? '') !== $backend) {
-				$state = ['gaps' => [], 'backend' => $backend];
-			}
-			if ($readOnly) {
-				return $state;
-			}
-			$recovered = @rename($directory . 'write-failed', $directory . 'write-failed-recovered');
-			if ($recovered) {
-				$state['gap_start'] = min($state['gap_start'] ?? PHP_INT_MAX, filemtime($directory . 'write-failed-recovered'));
-				$state['failure'] = 'health_unavailable';
-			}
-			if (is_callable($change)) {
-				$change = $change($state);
-			}
-			if ($recovered && !$change) {
-				$change = ['gap_start' => $state['gap_start']];
+			$file = $directory . 'health.json';
+			$saved = is_file($file) ? file_get_contents($file) : '';
+			$state = $saved === '' ? [] : json_decode((string) $saved, true);
+			if (!is_array($state)) {
+				if (!$change) {
+					return self::UNAVAILABLE;
+				}
+				$state = ['suspended' => true];
 			}
 			if ($change) {
-				if (isset($change['reserve_bytes'])) {
-					$state['estimated_new_bytes'] = ($state['estimated_new_bytes'] ?? 0) + $change['reserve_bytes'];
-					if (($state['allocated_mb'] ?? 0) * 1048576 + $state['estimated_new_bytes'] >= $change['ceiling_bytes']) {
-						$state['suspended'] = true;
-						$state['event_gap_start'] ??= time();
-						$state['storage_shared'] = TelemetryConnection::shared();
-					}
-					unset($change['reserve_bytes'], $change['ceiling_bytes']);
+				$state = array_filter(array_replace($state, $change), static fn($value) => $value !== null);
+				// A new file replaces the old one, so a crash never leaves half a file.
+				$json = json_encode($state, JSON_UNESCAPED_UNICODE);
+				if (file_put_contents($file . '.tmp', $json) !== strlen($json) || !rename($file . '.tmp', $file)) {
+					return self::UNAVAILABLE;
 				}
-				if (isset($change['gap_start'])) {
-					$change['gap_start'] = min($state['gap_start'] ?? PHP_INT_MAX, $change['gap_start']);
-				}
-				if (isset($change['success']) && isset($state['gap_start'])) {
-					$state['gaps'][] = [
-						'from' => $state['gap_start'],
-						'to' => $change['success'],
-						'reason' => $state['failure'] ?? 'unknown',
-					];
-					$state['gaps'] = array_slice($state['gaps'], -200);
-					unset($state['gap_start'], $state['failure']);
-				}
-				$state = array_replace($state, $change);
-				rewind($handle);
-				ftruncate($handle, 0);
-				$json = json_encode($state, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-				if (fwrite($handle, $json) !== strlen($json) || !fflush($handle)) {
-					throw new RuntimeException('Telemetry health write failed.');
-				}
-			}
-			if ($recovered) {
-				unlink($directory . 'write-failed-recovered');
 			}
 			return $state;
-		} catch (Throwable $e) {
-			if (!empty($recovered)) {
-				@rename($directory . 'write-failed-recovered', $directory . 'write-failed');
-			}
-			return self::healthUnavailable($directory, $collecting);
 		} finally {
-			flock($handle, LOCK_UN);
-			fclose($handle);
+			flock($lock, LOCK_UN);
+			fclose($lock);
 		}
 	}
 
-	private static function healthUnavailable(string $directory, bool $collecting): array
+	public function write(array $events): bool
 	{
-		// This marker survives contention on the health file and keeps the first failure time.
-		if ($collecting) {
-			$marker = @fopen($directory . 'write-failed', 'x');
-			if ($marker) {
-				fclose($marker);
-			}
-			error_log('Telemetry health unavailable; collection interrupted.');
-		}
-		return ['unavailable' => true, 'failure' => 'health_unavailable', 'gaps' => []];
-	}
-
-	public function write(array $events, array $settings): bool
-	{
+		// The cron measures the used space. When the shared database is full, nothing is written;
+		// a separate database still keeps activity time.
 		$health = self::health();
-		$all = array_map(static fn($u) => TelemetrySettings::get((int)$u), Universe::availableUniverses());
-		$storage = TelemetrySettings::storage(array_merge($all, $settings));
-		if (!isset($health['maintenance_at']) || TelemetryConnection::shared() && $health['maintenance_at'] < time() - 300) {
-			$health = $this->maintenance($storage, time());
-		}
-		$budget = $storage['budget_mb'];
-		$reserve = $storage['reserve_mb'];
-		$health = self::health([
-			'reserve_bytes' => strlen(json_encode($events, JSON_THROW_ON_ERROR)) * 3 + count($events) * 512,
-			'ceiling_bytes' => ($budget - $reserve) * 1048576,
-		]);
-		if (!empty($health['unavailable'])) {
-			throw new RuntimeException('Telemetry storage reservation unavailable.');
-		}
 		if (TelemetryConnection::shared() && !empty($health['suspended'])) {
 			return false;
 		}
-		$daily = [];
+		$days = [];
+		$network = [];
 		$rows = [];
-		$detailedRequests = [];
 		foreach ($events as $event) {
-			if ($event['interactive'] && $event['kind'] !== 'interaction') {
-				$detailedRequests[$event['request_id']] = true;
+			if (in_array($event['kind'], self::EVIDENCE_KINDS, true)) {
+				$rows[] = $event;
+				continue;
+			}
+			$day = gmdate('Y-m-d', $event['at']);
+			$key = $event['universe'] . ':' . $event['actor'] . ':' . $day;
+			$days[$key] ??= ['universe' => $event['universe'], 'actor' => $event['actor'], 'day' => $day, 'windows' => [], 'actions' => [], 'requests' => [], 'hours' => []];
+			if ($event['interactive']) {
+				$days[$key]['windows'][] = [$event['at'], $event['at']];
+			}
+			// Per hour: keep-alive loads, planet switches and alliance views among them, and everything else.
+			// The shortest and longest wait between requests are added when the day is saved.
+			$hour = (int) gmdate('G', $event['at']);
+			$counts = $days[$key]['hours'][$hour] ?? [0, 0, 0, 0];
+			$counts[in_array($event['kind'], self::KEEP_ALIVE_KINDS, true) ? 0 : 2]++;
+			$counts[1] += (int) ($event['kind'] === 'planet.switch');
+			$counts[3] += (int) ($event['kind'] === 'alliance.view');
+			$days[$key]['hours'][$hour] = $counts;
+			$days[$key]['actions'][$event['kind']] = ($days[$key]['actions'][$event['kind']] ?? 0) + 1;
+			$days[$key]['requests'][$event['request_id']] = min($days[$key]['requests'][$event['request_id']] ?? $event['at'], $event['at']);
+			if (isset($event['ip']) || isset($event['client'])) {
+				$address = $key . ':' . ($event['ip'] ?? '') . ':' . ($event['client'] ?? '');
+				$network[$address] ??= [
+					'values' => [$event['universe'], $event['actor'], $day, $event['ip'] ?? '', $event['client'] ?? ''],
+					'requests' => [],
+					'first' => $event['at'],
+					'last' => $event['at'],
+				];
+				$network[$address]['requests'][$event['request_id']] = true;
+				$network[$address]['first'] = min($network[$address]['first'], $event['at']);
+				$network[$address]['last'] = max($network[$address]['last'], $event['at']);
 			}
 		}
-		foreach ($events as $e) {
-			$s = $settings[$e['universe']];
-			if ($e['interactive']) {
-				$day = gmdate('Y-m-d', $e['at']);
-				$key = $e['universe'] . ':' . $e['actor'] . ':' . $day;
-				$daily[$key] ??= ['universe' => $e['universe'], 'actor' => $e['actor'], 'day' => $day, 'windows' => []];
-				$daily[$key]['windows'][] = [$e['at'], $e['at']];
-			}
-			// Keep one navigation row when it is the only source of client information in this request.
-			$keep = $e['kind'] !== 'interaction' || $s['network_enabled'] && !isset($detailedRequests[$e['request_id']]);
-			if ($keep && $s['events_enabled'] && empty($health['suspended'])) {
-				$rows[] = $e;
-			}
-		}
+		// Lock rows always in the same order when one request touches several accounts.
+		ksort($days);
+		ksort($network);
 		$this->db->beginTransaction();
 		try {
-			// Take daily row locks in a stable order when a request spans several accounts.
-			ksort($daily);
-			foreach ($daily as $d) {
-				$key = [$d['universe'], $d['actor'], $d['day']];
-				$this->query(
-					"INSERT INTO %%TELEMETRY_DAILY%% (universe,actor,day,windows) VALUES (?,?,?,'[]') ON DUPLICATE KEY UPDATE actor=VALUES(actor)",
-					$key
-				);
-				$previous = json_decode($this->query(
-					'SELECT windows FROM %%TELEMETRY_DAILY%% WHERE universe=? AND actor=? AND day=? FOR UPDATE',
-					$key
-				)->fetchColumn(), true, 512, JSON_THROW_ON_ERROR);
-				$windows = TelemetryActivity::merge(array_merge($previous, $d['windows']));
-				$this->query(
-					'UPDATE %%TELEMETRY_DAILY%% SET windows=? WHERE universe=? AND actor=? AND day=?',
-					array_merge([json_encode($windows, JSON_THROW_ON_ERROR)], $key)
-				);
+			foreach ($days as $day) {
+				$this->addDay($day);
 			}
-			if ($rows) {
-				$values = [];
-				foreach ($rows as $e) {
-					array_push(
-						$values,
-						$e['event_key'],
-						$e['request_id'],
-						$e['universe'],
-						$e['actor'],
-						$e['target'],
-						min($e['actor'], $e['target']),
-						max($e['actor'], $e['target']),
-						$e['at'],
-						$e['kind'],
-						$e['result'],
-						$e['fleet_id'],
-						(int) $e['interactive'],
-						$e['ip'],
-						json_encode($e['data'], JSON_THROW_ON_ERROR)
-					);
+			foreach ($rows as $row) {
+				if ($row['kind'] === 'delivery' && $row['target'] > 0) {
+					$this->addPair($row);
 				}
-				$this->query(
-					'INSERT INTO %%TELEMETRY_EVENTS%% (event_key,request_id,universe,actor,target,pair_a,pair_b,at,kind,result,fleet_id,interactive,ip,data) VALUES ' . implode(',', array_fill(0, count($rows), '(' . implode(',', array_fill(0, 14, '?')) . ')')),
-					$values
-				)->closeCursor();
+			}
+			if (empty($health['suspended'])) {
+				$this->insertEvents($rows);
+				foreach ($network as $address) {
+					$this->addNetwork($address);
+				}
 			}
 			$this->db->commit();
 			return true;
@@ -215,14 +133,161 @@ final class TelemetryStore
 		}
 	}
 
+	/** Resources of one delivery, with the build cost of the ships left there. */
+	public static function delivered(array $data): array
+	{
+		$resources = [];
+		foreach (['metal', 'crystal', 'deuterium'] as $resource) {
+			$resources[$resource] = max(0, (float) ($data[$resource] ?? 0)) + (float) ($data['ship_value'][$resource] ?? 0);
+		}
+		return $resources;
+	}
+
+	/** Activity time, action counts, hourly counts and waits, and gaps between requests of one account and day. */
+	private function addDay(array $day): void
+	{
+		$key = [$day['universe'], $day['actor'], $day['day']];
+		$this->query(
+			"INSERT INTO %%TELEMETRY_DAILY%% (universe,actor,day,windows,actions,gaps,hours) VALUES (?,?,?,'[]','{}','{}','{}')
+			ON DUPLICATE KEY UPDATE actor=VALUES(actor)",
+			$key
+		);
+		$saved = $this->query(
+			'SELECT windows,actions,gaps,hours,last_at FROM %%TELEMETRY_DAILY%% WHERE universe=? AND actor=? AND day=? FOR UPDATE',
+			$key
+		)->fetch(PDO::FETCH_ASSOC);
+		$windows = TelemetryActivity::merge(array_merge(json_decode($saved['windows'], true, 512, JSON_THROW_ON_ERROR), $day['windows']));
+		$actions = json_decode($saved['actions'], true, 512, JSON_THROW_ON_ERROR);
+		foreach ($day['actions'] as $kind => $count) {
+			$actions[$kind] = ($actions[$kind] ?? 0) + $count;
+		}
+		[$gaps, $last, $waits] = TelemetryActivity::addGaps(
+			json_decode($saved['gaps'], true, 512, JSON_THROW_ON_ERROR),
+			array_values($day['requests']),
+			(int) $saved['last_at']
+		);
+		$hours = json_decode($saved['hours'], true, 512, JSON_THROW_ON_ERROR);
+		foreach ($day['hours'] as $hour => $counts) {
+			[$loads, $switches, $busy, $alliance, $shortest, $longest] = $hours[$hour] ?? [0, 0, 0, 0, 0, 0];
+			[$newShortest, $newLongest] = $waits[$hour] ?? [0, 0];
+			$hours[$hour] = [
+				$loads + $counts[0],
+				$switches + $counts[1],
+				$busy + $counts[2],
+				$alliance + $counts[3],
+				TelemetryActivity::shortest($shortest, $newShortest),
+				max($longest, $newLongest),
+			];
+		}
+		$this->query(
+			'UPDATE %%TELEMETRY_DAILY%% SET windows=?,actions=?,gaps=?,hours=?,last_at=? WHERE universe=? AND actor=? AND day=?',
+			array_merge([
+				json_encode($windows, JSON_THROW_ON_ERROR),
+				json_encode($actions, JSON_THROW_ON_ERROR),
+				json_encode($gaps, JSON_FORCE_OBJECT | JSON_THROW_ON_ERROR),
+				json_encode($hours, JSON_THROW_ON_ERROR),
+				$last,
+			], $key)
+		);
+	}
+
+	private function insertEvents(array $events): void
+	{
+		if (!$events) {
+			return;
+		}
+		$values = [];
+		foreach ($events as $event) {
+			array_push(
+				$values,
+				$event['universe'],
+				$event['actor'],
+				$event['target'],
+				min($event['actor'], $event['target']),
+				max($event['actor'], $event['target']),
+				$event['at'],
+				$event['kind'],
+				json_encode($event['data'], JSON_THROW_ON_ERROR)
+			);
+		}
+		$placeholders = '(' . implode(',', array_fill(0, count(self::EVENT_COLUMNS), '?')) . ')';
+		$sql = 'INSERT INTO %%TELEMETRY_EVENTS%% (' . implode(',', self::EVENT_COLUMNS) . ')
+			VALUES ' . implode(',', array_fill(0, count($events), $placeholders));
+		$this->query($sql, $values)->closeCursor();
+	}
+
+	private function addNetwork(array $address): void
+	{
+		$this->query(
+			'INSERT INTO %%TELEMETRY_NETWORK%% (universe,actor,day,ip,client,requests,first_at,last_at)
+			VALUES (?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE requests=requests+VALUES(requests),
+			first_at=LEAST(first_at,VALUES(first_at)),last_at=GREATEST(last_at,VALUES(last_at))',
+			array_merge($address['values'], [count($address['requests']), $address['first'], $address['last']])
+		);
+	}
+
+	/** All-time totals per pair of accounts, kept after the deliveries themselves are removed. */
+	private function addPair(array $delivery): void
+	{
+		$side = $delivery['actor'] < $delivery['target'] ? 'a' : 'b';
+		$resources = self::delivered($delivery['data']);
+		$this->query(
+			"INSERT INTO %%TELEMETRY_PAIRS%%
+			(universe,pair_a,pair_b,{$side}_metal,{$side}_crystal,{$side}_deuterium,{$side}_deliveries,first_at,last_at)
+			VALUES (?,?,?,?,?,?,1,?,?) ON DUPLICATE KEY UPDATE
+			{$side}_metal={$side}_metal+VALUES({$side}_metal),{$side}_crystal={$side}_crystal+VALUES({$side}_crystal),
+			{$side}_deuterium={$side}_deuterium+VALUES({$side}_deuterium),{$side}_deliveries={$side}_deliveries+1,
+			first_at=LEAST(first_at,VALUES(first_at)),last_at=GREATEST(last_at,VALUES(last_at))",
+			[
+				$delivery['universe'],
+				min($delivery['actor'], $delivery['target']),
+				max($delivery['actor'], $delivery['target']),
+				$resources['metal'],
+				$resources['crystal'],
+				$resources['deuterium'],
+				$delivery['at'],
+				$delivery['at'],
+			]
+		);
+	}
+
+	/** All-time exchange seen from the sender: what they sent and what came back. */
+	public function pairTotals(int $universe, int $sender, int $recipient): ?array
+	{
+		$row = $this->query(
+			'SELECT * FROM %%TELEMETRY_PAIRS%% WHERE universe=? AND pair_a=? AND pair_b=?',
+			[$universe, min($sender, $recipient), max($sender, $recipient)]
+		)->fetch(PDO::FETCH_ASSOC);
+		if (!$row) {
+			return null;
+		}
+		[$out, $in] = $sender < $recipient ? ['a', 'b'] : ['b', 'a'];
+		$totals = [];
+		foreach (['sent' => $out, 'returned' => $in] as $name => $side) {
+			foreach (['metal', 'crystal', 'deuterium'] as $resource) {
+				$totals[$name][$resource] = (float) $row[$side . '_' . $resource];
+			}
+		}
+		$totals['deliveries'] = (int) $row[$out . '_deliveries'];
+		$totals['returned_deliveries'] = (int) $row[$in . '_deliveries'];
+		$totals['since'] = (int) $row['first_at'];
+		return $totals;
+	}
+
 	public function events(int $universe, int $actor, int $since, int $limit, ?int $other = null, bool $recent = false): array
 	{
-		$where = $other === null ? 'actor=?' : "pair_a=? AND pair_b=? AND kind IN ('delivery','combat')";
-		$args = $other === null ? [$universe, $actor, $since] : [$universe, min($actor, $other), max($actor, $other), $since];
+		if ($other === null) {
+			$where = 'actor=?';
+			$values = [$universe, $actor, $since];
+		} else {
+			$where = "pair_a=? AND pair_b=? AND kind IN ('delivery','combat')";
+			$values = [$universe, min($actor, $other), max($actor, $other), $since];
+		}
 		$order = $recent ? 'at DESC,id DESC' : 'at,id';
 		$rows = $this->query(
-			"SELECT * FROM %%TELEMETRY_EVENTS%% WHERE universe=? AND {$where} AND at>=? ORDER BY {$order} LIMIT " . ($limit + 1),
-			$args
+			"SELECT * FROM %%TELEMETRY_EVENTS%% WHERE universe=? AND {$where} AND at>=?
+			ORDER BY {$order} LIMIT " . ($limit + 1),
+			$values
 		)->fetchAll(PDO::FETCH_ASSOC);
 		foreach ($rows as &$row) {
 			$row['data'] = json_decode($row['data'], true);
@@ -240,40 +305,85 @@ final class TelemetryStore
 
 	public function actionCounts(int $universe, int $actor, int $from, int $to): array
 	{
+		$counts = [];
 		$rows = $this->query(
-			'SELECT kind,COUNT(DISTINCT request_id) AS count FROM %%TELEMETRY_EVENTS%%
-			WHERE universe=? AND actor=? AND at>=? AND at<=? AND interactive=1 GROUP BY kind',
-			[$universe, $actor, $from, $to]
-		)->fetchAll(PDO::FETCH_ASSOC);
-		return array_column($rows, 'count', 'kind');
+			'SELECT actions FROM %%TELEMETRY_DAILY%% WHERE universe=? AND actor=? AND day>=? AND day<=?',
+			[$universe, $actor, gmdate('Y-m-d', $from), gmdate('Y-m-d', $to)]
+		)->fetchAll(PDO::FETCH_COLUMN);
+		foreach ($rows as $actions) {
+			foreach (json_decode($actions, true, 512, JSON_THROW_ON_ERROR) as $kind => $count) {
+				$counts[$kind] = ($counts[$kind] ?? 0) + $count;
+			}
+		}
+		return $counts;
 	}
 
 	public function network(int $universe, int $actor, int $from, int $to): array
 	{
-		$where = 'universe=? AND actor=? AND at>=? AND at<=? AND interactive=1';
-		$values = [$universe, $actor, $from, $to];
-		$client = "JSON_UNQUOTE(JSON_EXTRACT(data, '$.client'))";
-		$totals = $this->query(
-			"SELECT COUNT(DISTINCT ip) AS ips,COUNT(DISTINCT {$client}) AS clients\n            FROM %%TELEMETRY_EVENTS%% WHERE {$where}",
+		$where = 'universe=? AND actor=? AND day>=? AND day<=?';
+		$values = [$universe, $actor, gmdate('Y-m-d', $from), gmdate('Y-m-d', $to)];
+		$network = $this->query(
+			"SELECT COUNT(DISTINCT NULLIF(ip,'')) AS ips,COUNT(DISTINCT NULLIF(client,'')) AS clients
+			FROM %%TELEMETRY_NETWORK%% WHERE {$where}",
 			$values
 		)->fetch(PDO::FETCH_ASSOC);
-		$totals['rows'] = $this->query(
-			"SELECT ip,{$client} AS client,COUNT(DISTINCT request_id) AS requests,\n            MIN(at) AS first_seen,MAX(at) AS last_seen FROM %%TELEMETRY_EVENTS%%\n            WHERE {$where} AND (ip IS NOT NULL OR {$client} IS NOT NULL)\n            GROUP BY ip,client ORDER BY last_seen DESC LIMIT 51",
+		$rows = $this->query(
+			"SELECT NULLIF(ip,'') AS ip,NULLIF(client,'') AS client,SUM(requests) AS requests,
+			MIN(first_at) AS first_seen,MAX(last_at) AS last_seen
+			FROM %%TELEMETRY_NETWORK%% WHERE {$where}
+			GROUP BY ip,client ORDER BY last_seen DESC LIMIT " . (self::PAGE_SIZE + 1),
 			$values
 		)->fetchAll(PDO::FETCH_ASSOC);
-		$totals['more'] = count($totals['rows']) > 50;
-		$totals['rows'] = array_slice($totals['rows'], 0, 50);
-		return $totals;
+		$network['more'] = count($rows) > self::PAGE_SIZE;
+		$network['rows'] = array_slice($rows, 0, self::PAGE_SIZE);
+		return $network;
+	}
+
+	/** One page of warnings involving an account, newest first; one extra row tells if more exist. */
+	public function accountWarnings(int $universe, int $actor, int $beforeId): array
+	{
+		return $this->query(
+			'SELECT id,actor,other,kind,strength,observation_start,observation_end,status
+			FROM %%TELEMETRY_WARNINGS%%
+			WHERE universe=? AND (actor=? OR other=?) AND id<?
+			ORDER BY id DESC LIMIT ' . (self::PAGE_SIZE + 1),
+			[$universe, $actor, $actor, $beforeId]
+		)->fetchAll(PDO::FETCH_ASSOC);
+	}
+
+	/** Accounts with warnings in this status, as sender or as receiver. */
+	public function warnedAccounts(int $universe, string $status, int $beforeAccount): array
+	{
+		return $this->query(
+			'SELECT account,COUNT(*) AS total,GROUP_CONCAT(DISTINCT kind ORDER BY kind) AS kinds,MAX(observation_end) AS last_seen
+			FROM (
+				SELECT actor AS account,kind,observation_end FROM %%TELEMETRY_WARNINGS%%
+				WHERE universe=? AND status=?
+				UNION ALL
+				SELECT other AS account,kind,observation_end FROM %%TELEMETRY_WARNINGS%%
+				WHERE universe=? AND status=? AND other>0 AND other<>actor
+			) AS warnings
+			WHERE account<? GROUP BY account ORDER BY account DESC LIMIT ' . (self::PAGE_SIZE + 1),
+			[$universe, $status, $universe, $status, $beforeAccount]
+		)->fetchAll(PDO::FETCH_ASSOC);
+	}
+
+	public function settingsHistory(int $universe): array
+	{
+		return $this->query(
+			"SELECT admin,at,data FROM %%TELEMETRY_AUDIT%%
+			WHERE universe=? AND action='settings' ORDER BY at DESC LIMIT 20",
+			[$universe]
+		)->fetchAll(PDO::FETCH_ASSOC);
 	}
 
 	public function warning(int $universe, int $actor, int $other, array $finding, array $settings, int $now): void
 	{
-		$evidence = json_encode($finding, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 		$this->query(
 			'INSERT INTO %%TELEMETRY_WARNINGS%%
-			(universe,actor,other,kind,strength,explanation,first_seen,last_seen,observation_start,observation_end,settings,evidence)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE
-			last_seen=VALUES(last_seen),strength=VALUES(strength),explanation=VALUES(explanation),
+			(universe,actor,other,kind,strength,first_seen,last_seen,observation_start,observation_end,settings,evidence)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE
+			last_seen=VALUES(last_seen),strength=VALUES(strength),
 			latest_evidence=VALUES(evidence),latest_settings=VALUES(settings),observation_end=VALUES(observation_end)',
 			[
 				$universe,
@@ -281,126 +391,58 @@ final class TelemetryStore
 				$other,
 				$finding['kind'],
 				$finding['strength'],
-				$finding['explanation'],
 				$now,
 				$now,
 				$finding['from'],
 				$finding['to'],
 				json_encode($settings, JSON_THROW_ON_ERROR),
-				$evidence,
+				json_encode($finding, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
 			]
 		);
 	}
 
-	public function maintenance(array $settings, int $now): array
+	public function maintenance(int $deliveryDays, int $networkHours, int $now): array
 	{
-		$reservation = self::health()['estimated_new_bytes'] ?? 0;
-		// Allocation includes free pages: DELETE alone does not prove disk was released.
-		$analysis = $this->query('ANALYZE TABLE %%TELEMETRY_DAILY%%,%%TELEMETRY_EVENTS%%,%%TELEMETRY_WARNINGS%%,%%TELEMETRY_AUDIT%%')->fetchAll(PDO::FETCH_ASSOC);
-		foreach ($analysis as $row) {
-			if ($row['Msg_type'] === 'error') {
-				throw new RuntimeException('Telemetry allocation statistics unavailable.');
-			}
+		$megabytes = $this->allocatedMegabytes();
+		$closed = $now - TelemetrySettings::CLOSED_DAYS * 86400;
+		$cleanups = [
+			['%%TELEMETRY_EVENTS%%', 'at', $now - $deliveryDays * 86400, '1', []],
+			['%%TELEMETRY_NETWORK%%', 'last_at', $now - $networkHours * 3600, '1', []],
+			['%%TELEMETRY_DAILY%%', 'day', gmdate('Y-m-d', $now - TelemetrySettings::DAILY_DAYS * 86400), '1', []],
+			// A recent moderator decision keeps its case, even when the evidence is older.
+			['%%TELEMETRY_WARNINGS%%', 'last_seen', $closed, "status='dismissed' AND id NOT IN
+				(SELECT warning_id FROM %%TELEMETRY_AUDIT%% WHERE at>=? AND warning_id IS NOT NULL)", [$closed]],
+			['%%TELEMETRY_AUDIT%%', 'at', $now - 365 * 86400, 'warning_id IS NULL', []],
+		];
+		foreach ($cleanups as [$table, $column, $boundary, $condition, $values]) {
+			$this->query(
+				"DELETE FROM {$table} WHERE {$column}<? AND {$condition} ORDER BY {$column} LIMIT " . TelemetrySettings::CLEANUP_ROWS,
+				array_merge([$boundary], $values)
+			);
 		}
+		return self::health([
+			'maintenance_at' => $now,
+			'allocated_mb' => $megabytes,
+			'suspended' => $megabytes >= TelemetrySettings::BUDGET_MB - TelemetrySettings::RESERVE_MB,
+		]);
+	}
+
+	/**
+	 * Whole database size, including free pages: DELETE alone does not give disk space back.
+	 * Tables in one shared file all report its free space, so it is added only once.
+	 * InnoDB updates these numbers by itself; ANALYZE TABLE would make player requests wait.
+	 */
+	private function allocatedMegabytes(): float
+	{
+		// MySQL 8 caches table sizes for a day by default.
 		$version = $this->db->getAttribute(PDO::ATTR_SERVER_VERSION);
 		if (!str_contains($version, 'MariaDB') && version_compare($version, '8.0', '>=')) {
 			$this->db->exec('SET SESSION information_schema_stats_expiry=0');
 		}
-		$size = $this->query('SELECT COALESCE(SUM(DATA_LENGTH+INDEX_LENGTH+DATA_FREE),0) AS allocated,
-			COALESCE(SUM(TABLE_ROWS),0) AS estimated_rows FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()')->fetch(PDO::FETCH_ASSOC);
-		$mb = (float) $size['allocated'] / 1048576;
-		$suspended = $mb >= $settings['budget_mb'] - $settings['reserve_mb'];
-		$pressured = $mb >= ($settings['budget_mb'] - $settings['reserve_mb']) * 0.8;
-		$days = $pressured ? 1 : $settings['event_days'];
-		$limit = (int) $settings['cleanup_rows'];
-		$deleted = 0;
-		$removed = [];
-		foreach ([
-			['%%TELEMETRY_EVENTS%%', 'at', $now - $days * 86400, " AND kind NOT IN ('delivery','combat')"],
-			['%%TELEMETRY_EVENTS%%', 'at', $now - TelemetrySettings::deliveryDays($settings) * 86400, " AND kind IN ('delivery','combat')"],
-			['%%TELEMETRY_DAILY%%', 'day', gmdate('Y-m-d', $now - $settings['daily_days'] * 86400), ''],
-			['%%TELEMETRY_WARNINGS%%', 'last_seen', $now - $settings['closed_days'] * 86400, " AND status='dismissed'"],
-			['%%TELEMETRY_AUDIT%%', 'at', $now - 365 * 86400, ' AND warning_id IS NULL'],
-		] as [$table, $column, $boundary, $extra]) {
-			$count = $this->query(
-				"DELETE FROM {$table} WHERE {$column}<? {$extra} ORDER BY {$column} LIMIT {$limit}",
-				[$boundary]
-			)->rowCount();
-			$deleted += $count;
-			if ($count && in_array($table, ['%%TELEMETRY_EVENTS%%', '%%TELEMETRY_DAILY%%'], true)) {
-				$removed[$table === '%%TELEMETRY_EVENTS%%' ? ($extra === " AND kind IN ('delivery','combat')" ? 'deliveries_removed_before' : 'events_removed_before') : 'daily_removed_before'] = is_int($boundary) ? $boundary : strtotime($boundary . ' UTC');
-			}
-		}
-		$change = [
-			'maintenance_at' => $now,
-			'allocated_mb' => $mb,
-			'estimated_rows' => (int) $size['estimated_rows'],
-			'pressured' => $pressured,
-			'effective_event_days' => $days,
-			'cleanup_deleted' => $deleted,
-		] + $removed;
-		return self::health(static function (array $old) use ($change, $reservation, $settings, $mb, $now): array {
-			// Writes made during measurement still need their reservation.
-			$change['estimated_new_bytes'] = max(0, ($old['estimated_new_bytes'] ?? 0) - $reservation);
-			$change['suspended'] = $mb + $change['estimated_new_bytes'] / 1048576 >= $settings['budget_mb'] - $settings['reserve_mb'];
-			if ($change['suspended']) {
-				$change['event_gap_start'] = $old['event_gap_start'] ?? $now;
-				$change['storage_shared'] = TelemetryConnection::shared();
-			} elseif (!empty($old['event_gap_start'])) {
-				$change['gaps'] = array_slice(
-					array_merge(
-						$old['gaps'],
-						[['from' => $old['event_gap_start'], 'to' => $now, 'reason' => !empty($old['storage_shared']) ? 'storage_full' : 'storage_events']]
-					),
-					-200
-				);
-				$change['event_gap_start'] = null;
-			}
-			return $change;
-		});
-	}
-
-	public static function switchChanged(int $universe, string $reason, bool $enabled, int $now): void
-	{
-		self::health(static function (array $health) use ($universe, $reason, $enabled, $now): array {
-			$key = $reason . '_since_' . $universe;
-			if (!$enabled) {
-				return [$key => $health[$key] ?? $now];
-			}
-			if (!isset($health[$key])) {
-				return [];
-			}
-			return [
-				$key => null,
-				'gaps' => array_slice(array_merge($health['gaps'], [
-					['from' => $health[$key], 'to' => $now, 'reason' => $reason, 'universe' => $universe],
-				]), -200),
-			];
-		});
-	}
-
-	public static function interruptions(int $universe, int $from, int $to, bool $events = true, bool $deliveries = false): array
-	{
-		$health = self::health();
-		$gaps = $health['gaps'] ?? [];
-		foreach (['gap_start' => 'write_failed', 'disabled_since_' . $universe => 'disabled'] as $key => $reason) {
-			if (!empty($health[$key])) {
-				$gaps[] = ['from' => $health[$key], 'to' => $to, 'reason' => $reason];
-			}
-		}
-		if (($events || !empty($health['storage_shared'])) && !empty($health['event_gap_start'])) {
-			$gaps[] = ['from' => $health['event_gap_start'], 'to' => $to, 'reason' => !empty($health['storage_shared']) ? 'storage_full' : 'storage_events'];
-		}
-		if ($events && !empty($health['events_disabled_since_' . $universe])) {
-			$gaps[] = ['from' => $health['events_disabled_since_' . $universe], 'to' => $to, 'reason' => 'events_disabled'];
-		}
-		$boundary = $health[$events ? ($deliveries ? 'deliveries_removed_before' : 'events_removed_before') : 'daily_removed_before'] ?? 0;
-		if ($from < $boundary) {
-			$gaps[] = ['from' => $from, 'to' => $boundary, 'reason' => 'retention'];
-		}
-		return array_values(array_filter(
-			$gaps,
-			static fn($gap) => ($gap['universe'] ?? $universe) === $universe && $gap['from'] <= $to && $gap['to'] >= $from && ($events || !in_array($gap['reason'], ['storage_events', 'events_disabled'], true))
-		));
+		$bytes = $this->query(
+			'SELECT COALESCE(SUM(DATA_LENGTH+INDEX_LENGTH),0)+COALESCE(MAX(DATA_FREE),0) FROM information_schema.TABLES
+			WHERE TABLE_SCHEMA=DATABASE()'
+		)->fetchColumn();
+		return (float) $bytes / 1048576;
 	}
 }

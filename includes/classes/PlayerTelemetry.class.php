@@ -2,18 +2,19 @@
 
 final class PlayerTelemetry
 {
+	private const MAX_ACTIONS_PER_REQUEST = 256;
+	private const WRITE_BATCH = 256;
+
 	private static array $settings = [];
 	private static array $ready = [];
 	private static ?string $request = null;
 	private static int $queued = 0;
-	private static int $sequence = 0;
 
 	public static function enabled(int $universe): bool
 	{
 		try {
 			if (!array_key_exists($universe, self::$settings)) {
-				self::$settings[$universe] = TelemetryConnection::masterEnabled()
-					? TelemetrySettings::get($universe) : ['enabled' => 0];
+				self::$settings[$universe] = TelemetrySettings::get($universe);
 			}
 			return !empty(self::$settings[$universe]['enabled']);
 		} catch (Throwable $e) {
@@ -23,26 +24,61 @@ final class PlayerTelemetry
 
 	public static function passive(array $query): bool
 	{
-		$page = strtolower((string)($query['page'] ?? 'overview'));
-		return (in_array($page, ['buildings', 'research', 'overview', 'shipyard'], true)
+		return (in_array(self::name($query, 'page', 'overview'), ['buildings', 'research', 'overview', 'shipyard'], true)
 				&& ($query['passive_reload'] ?? '') === 'queue');
 	}
 
-	public static function interaction(int $actor, int $universe): void
+	/**
+	 * Sorts each page load by what it changes, and returns the page to remember in the session.
+	 * The same page again or another planet keeps the planet activity (*) alive without playing.
+	 * The alliance page shows fleets against every member, so any view of it is watching.
+	 * Queue reloads are not activity time, but the marker comes from the browser, so they are
+	 * still counted and checked. For the same reason a form or AJAX call is not an action by
+	 * itself: real actions are recorded by the game code that runs them.
+	 */
+	public static function interaction(int $actor, int $universe, int $planet = 0, ?string $previous = null): ?string
 	{
-		if (!self::passive($_GET + $_POST)) {
-			self::record($actor, $universe, 'interaction', 0, 0, [], true);
-		}
+		$query = $_GET + $_POST;
+		$page = $planet . ':' . self::name($query, 'page', 'overview') . ':' . self::name($query, 'mode');
+		$kind = match (true) {
+			self::passive($query) => 'passive',
+			explode(':', $page)[1] === 'alliance' => 'alliance.view',
+			$previous === null => 'interaction',
+			$page === $previous => 'reload',
+			explode(':', $previous)[0] !== (string)$planet => 'planet.switch',
+			default => 'interaction',
+		};
+		self::record($actor, $universe, $kind, 0, 0, [], $kind !== 'passive');
+		// Small AJAX calls do not replace the page the player is looking at.
+		return empty($query['ajax']) ? $page : $previous;
 	}
 
-	public static function action(string $kind, int $target = 0, int $fleet = 0, array $data = []): void
+	/** Counts one game action of the current player. */
+	public static function action(string $kind): void
 	{
 		global $USER;
 		if (empty($USER['id']) || empty($USER['universe'])) {
 			return;
 		}
-		self::record((int)$USER['id'], (int)$USER['universe'], $kind, $target,
-			$fleet, $data, true);
+		self::record((int)$USER['id'], (int)$USER['universe'], $kind, 0, 0, [], true);
+	}
+
+	/**
+	 * Showing the galaxy is free and updates the planet activity (*) like any page, so the same
+	 * system again is only a reload. Returns the system to remember in the session.
+	 */
+	public static function galaxyView(int $galaxy, int $system, ?string $previous): string
+	{
+		$shown = $galaxy . ':' . $system;
+		if ($shown !== $previous) {
+			self::action('galaxy.view');
+		}
+		return $shown;
+	}
+
+	private static function name(array $query, string $key, string $default = ''): string
+	{
+		return is_string($query[$key] ?? null) ? strtolower($query[$key]) : $default;
 	}
 
 	public static function client(string $agent): string
@@ -53,7 +89,7 @@ final class PlayerTelemetry
 			str_contains($agent, 'Firefox/') || str_contains($agent, 'FxiOS/') => 'Firefox',
 			str_contains($agent, 'Chrome/') || str_contains($agent, 'CriOS/') => 'Chrome',
 			str_contains($agent, 'Safari/') => 'Safari',
-			default => 'Autre navigateur',
+			default => 'other',
 		};
 		$platform = match (true) {
 			str_contains($agent, 'Android') => 'Android',
@@ -61,13 +97,13 @@ final class PlayerTelemetry
 			str_contains($agent, 'Windows') => 'Windows',
 			str_contains($agent, 'Macintosh') => 'macOS',
 			str_contains($agent, 'Linux') => 'Linux',
-			default => 'Autre système',
+			default => 'other',
 		};
 		$device = match (true) {
-			str_contains($agent, 'iPad') || ($platform === 'Android' && !str_contains($agent, 'Mobile')) => 'tablette',
+			str_contains($agent, 'iPad') || ($platform === 'Android' && !str_contains($agent, 'Mobile')) => 'tablet',
 			str_contains($agent, 'Mobile') || str_contains($agent, 'iPhone') => 'mobile',
-			in_array($platform, ['Windows', 'macOS', 'Linux'], true) => 'ordinateur',
-			default => 'type inconnu',
+			in_array($platform, ['Windows', 'macOS', 'Linux'], true) => 'desktop',
+			default => 'unknown',
 		};
 		return $browser.' · '.$platform.' · '.$device;
 	}
@@ -80,32 +116,30 @@ final class PlayerTelemetry
 		}
 		try {
 			$at ??= time();
-			if ($interactive && ++self::$queued > 256) {
-				if (self::$queued === 257) {
-					TelemetryStore::health(['failure' => 'request_limit', 'gap_start' => $at]);
-				}
+			// A normal request records a few actions; ignore the rest instead of trusting the client.
+			if ($interactive && ++self::$queued > self::MAX_ACTIONS_PER_REQUEST) {
 				return;
 			}
 			self::$request ??= bin2hex(random_bytes(16));
 			$ip = $_SERVER['REMOTE_ADDR'] ?? '';
-			$network = $interactive && self::$settings[$universe]['network_enabled'];
-			if ($network && !empty($_SERVER['HTTP_USER_AGENT'])) {
-				$data['client'] = self::client(substr($_SERVER['HTTP_USER_AGENT'], 0, 1024));
+			$agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+			$network = ($interactive || $kind === 'passive') && self::$settings[$universe]['network_enabled'];
+			if ($fleetId > 0) {
+				$data['fleet'] = $fleetId;
 			}
 			$event = [
-				'event_key' => self::$request . '-' . ++self::$sequence,
 				'request_id' => self::$request, 'universe' => $universe, 'actor' => $actor,
-				'target' => $target, 'at' => $at, 'kind' => $kind, 'result' => 'success',
-				'fleet_id' => $fleetId, 'interactive' => $interactive,
+				'target' => $target, 'at' => $at, 'kind' => $kind, 'interactive' => $interactive,
 				'ip' => $network && filter_var($ip, FILTER_VALIDATE_IP) ? $ip : null,
+				'client' => $network && $agent !== '' ? self::client(substr($agent, 0, 1024)) : null,
 				'data' => $data,
 			];
-			// The callback only moves memory. SQL is deferred until all game locks are gone.
+			// The callback only keeps the event in memory. SQL waits until all game locks are released.
 			Database::get()->afterCommit(static function() use ($event) {
 				self::$ready[] = $event;
 			});
 		} catch (Throwable $e) {
-			TelemetryStore::health(['failure' => 'buffer_failed', 'gap_start' => time()]);
+			TelemetryStore::health(['failure' => 'buffer_failed', 'failed_at' => time()]);
 		}
 	}
 
@@ -120,23 +154,26 @@ final class PlayerTelemetry
 		if (($health['retry_after'] ?? 0) > time()) {
 			return;
 		}
-		if (!empty($health['suspended']) && TelemetryConnection::shared()
-			&& ($health['maintenance_at'] ?? 0) > time() - 300) {
+		if (!empty($health['suspended']) && TelemetryConnection::shared()) {
 			return;
 		}
 		try {
 			$store = new TelemetryStore(TelemetryConnection::open());
-			foreach (array_chunk($events, 256) as $batch) {
-				if (!$store->write($batch, self::$settings)) {
+			foreach (array_chunk($events, self::WRITE_BATCH) as $batch) {
+				if (!$store->write($batch)) {
 					return;
 				}
 			}
-			if (isset($health['gap_start']) || ($health['success'] ?? 0) <= time() - 60) {
-				TelemetryStore::health(['success' => time(), 'retry_after' => 0]);
+			if (isset($health['failure']) || ($health['success'] ?? 0) <= time() - 60) {
+				TelemetryStore::health(['success' => time(), 'retry_after' => null, 'failure' => null, 'failed_at' => null]);
 			}
 		} catch (Throwable $e) {
+			// Another request of the same player held the row: only these counts are lost.
+			if ($e instanceof PDOException && in_array($e->errorInfo[1] ?? null, [1205, 1213], true)) {
+				return;
+			}
 			// Keep connection details and SQL out of the admin health record.
-			TelemetryStore::health(['failure' => 'write_failed', 'gap_start' => min(array_column($events, 'at')), 'retry_after' => time() + 60]);
+			TelemetryStore::health(['failure' => 'write_failed', 'failed_at' => time(), 'retry_after' => time() + 60]);
 			error_log('Telemetry collection failed (' . get_class($e) . '). Gameplay already persisted.');
 		}
 	}

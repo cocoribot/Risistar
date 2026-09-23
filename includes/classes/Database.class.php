@@ -104,6 +104,7 @@ class Database
 		return true;
 	}
 
+	/** Runs $callback after the main transaction commits; forgets it on rollback. */
 	public function afterCommit(callable $callback)
 	{
 		if ($this->transactionDepth === 0) {
@@ -113,6 +114,7 @@ class Database
 		}
 	}
 
+	/** True once the main transaction was rolled back, so the end of the request must not save game state. */
 	public function wasRequestRolledBack()
 	{
 		return $this->requestRolledBack;

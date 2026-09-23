@@ -1,6 +1,6 @@
 <?php
 
-/** One shutdown owner: economy, session, commit, then optional telemetry. */
+/** Runs once at the end of each game request: economy save (the page commits it), session, what is left to commit, then telemetry. */
 final class GameRequest
 {
 	private static $economy;
@@ -51,6 +51,10 @@ final class GameRequest
 		// No gameplay transaction or PHP session lock may remain here.
 		if (session_status() === PHP_SESSION_ACTIVE) {
 			session_write_close();
+		}
+		// The page is complete: send it before writing telemetry.
+		if (function_exists('fastcgi_finish_request')) {
+			fastcgi_finish_request();
 		}
 		PlayerTelemetry::flush();
 	}

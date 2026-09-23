@@ -2,20 +2,32 @@
 
 final class TelemetryPresentation
 {
+	private const DURATION_KEYS = ['active_seconds', 'largest_gap_seconds', 'shortest_wait', 'average_wait', 'longest_wait'];
+	private const PERCENT_KEYS = ['share', 'allowance'];
+	private const NUMBER_KEYS = ['metal', 'crystal', 'deuterium', 'remaining', 'unpaid', 'minimum', 'observations'];
+	// JSON columns sort keys by length, so these are put back in reading order.
+	private const ORDER = ['from', 'to', 'idle_hours', 'loads', 'per_hour', 'shortest_wait', 'average_wait', 'longest_wait'];
+
 	public function __construct(private DateTimeZone $timezone)
 	{
 	}
 
 	public function date(int $at): string
 	{
-		return (new DateTimeImmutable('@' . $at))->setTimezone($this->timezone)->format('d/m/Y H:i:s T');
+		return $this->local($at)->format('d/m/Y H:i:s T');
+	}
+
+	private function local(int $at): DateTimeImmutable
+	{
+		return (new DateTimeImmutable('@' . $at))->setTimezone($this->timezone);
 	}
 
 	public static function duration(int $seconds): string
 	{
 		global $LNG;
+		$units = [86400 => $LNG['telemetry_duration_day'] ?? 'd', 3600 => 'h', 60 => 'min', 1 => 's'];
 		$parts = [];
-		foreach ([86400 => ($LNG['telemetry_duration_day'] ?? 'd'), 3600 => 'h', 60 => 'min', 1 => 's'] as $unit => $label) {
+		foreach ($units as $unit => $label) {
 			$value = intdiv($seconds, $unit);
 			if ($value > 0) {
 				$parts[] = $value . ' ' . $label;
@@ -28,42 +40,34 @@ final class TelemetryPresentation
 	public static function setting(string $key, $value): string
 	{
 		global $LNG;
-		$unit = TelemetrySettings::definitions()[$key][4] ?? '';
-		if ($unit === '0/1' || $key === 'enabled') {
+		$definition = TelemetrySettings::definitions()[$key] ?? ['unit' => ''];
+		if ($definition['unit'] === '0/1') {
 			return $value ? $LNG['telemetry_on'] : $LNG['telemetry_off'];
 		}
-		return $unit === 'fraction' ? round($value * 100, 3) . ' %' : trim($value . ' ' . ($LNG['telemetry_unit_' . $unit] ?? $unit));
+		if ($definition['unit'] === 'fraction') {
+			return round($value * 100, 3) . ' %';
+		}
+		return trim($value . ' ' . TelemetrySettings::unitLabel($definition));
 	}
 
 	public function activity(array $daily, int $from, int $to): array
 	{
-		$start = (new DateTimeImmutable('@' . $from))->setTimezone($this->timezone)->setTime(0, 0);
-		$end = (new DateTimeImmutable('@' . $to))->setTimezone($this->timezone);
 		$windows = TelemetryActivity::windows($daily);
 		$days = [];
 		$total = 0;
 		$activeDays = 0;
-		for ($date = $start; $date <= $end; $date = $date->modify('+1 day')) {
-			$intervals = TelemetryActivity::intervals($windows, max($from, $date->getTimestamp()), min($to + 60, $date->modify('+1 day')->getTimestamp()));
+		$end = $this->local($to);
+		for ($date = $this->local($from)->setTime(0, 0); $date <= $end; $date = $date->modify('+1 day')) {
+			$dayStart = max($from, $date->getTimestamp());
+			$dayEnd = min($to + 60, $date->modify('+1 day')->getTimestamp());
 			$day = ['day' => $date->format('d/m/Y'), 'bars' => [], 'windows' => [], 'seconds' => 0];
-			foreach ($intervals as [$first, $last]) {
-				$a = (new DateTimeImmutable('@' . $first))->setTimezone($this->timezone);
-				$b = (new DateTimeImmutable('@' . $last))->setTimezone($this->timezone);
+			foreach (TelemetryActivity::intervals($windows, $dayStart, $dayEnd) as [$first, $last]) {
 				$day['seconds'] += $last - $first;
-				$label = $this->date($first) . ' – ' . $this->date($last);
-				$day['windows'][] = ['range' => $a->format('H:i:s') . ' – ' . $b->format('H:i:s'), 'duration' => self::duration($last - $first)];
-				$boundaries = array_column($this->timezone->getTransitions($first, $last) ?: [], 'ts');
-				$boundaries[] = $last;
-				$at = $first;
-				foreach ($boundaries as $stop) {
-					if ($stop <= $at) {
-						continue;
-					}
-					$local = (new DateTimeImmutable('@' . $at))->setTimezone($this->timezone);
-					$second = (int)$local->format('G') * 3600 + (int)$local->format('i') * 60 + (int)$local->format('s');
-					$day['bars'][] = ['start' => $second / 864, 'width' => ($stop - $at) / 864, 'date' => $label];
-					$at = $stop;
-				}
+				$day['windows'][] = [
+					'range' => $this->local($first)->format('H:i:s') . ' – ' . $this->local($last)->format('H:i:s'),
+					'duration' => self::duration($last - $first),
+				];
+				array_push($day['bars'], ...$this->bars($first, $last));
 			}
 			$total += $day['seconds'];
 			$activeDays += (int) ($day['seconds'] > 0);
@@ -71,7 +75,7 @@ final class TelemetryPresentation
 			$days[$date->format('Y-m-d')] = $day;
 		}
 		$last = null;
-		foreach ($windows as [$first, $at]) {
+		foreach ($windows as [, $at]) {
 			if ($at >= $from && $at <= $to) {
 				$last = max($last ?? 0, $at);
 			}
@@ -88,14 +92,37 @@ final class TelemetryPresentation
 		];
 	}
 
+	/** Heatmap bars as percentages of the local day, split at clock changes. */
+	private function bars(int $first, int $last): array
+	{
+		$title = $this->date($first) . ' – ' . $this->date($last);
+		$stops = array_column($this->timezone->getTransitions($first, $last) ?: [], 'ts');
+		$stops[] = $last;
+		$bars = [];
+		$at = $first;
+		foreach ($stops as $stop) {
+			if ($stop <= $at) {
+				continue;
+			}
+			$local = $this->local($at);
+			$secondOfDay = (int) $local->format('G') * 3600 + (int) $local->format('i') * 60 + (int) $local->format('s');
+			$bars[] = ['start' => $secondOfDay / 86400 * 100, 'width' => ($stop - $at) / 86400 * 100, 'date' => $title];
+			$at = $stop;
+		}
+		return $bars;
+	}
+
 	public static function label(string $key): string
 	{
 		global $LNG;
 		if (str_starts_with($key, 'pushing.')) {
 			$key = 'pushing';
 		}
-		return $LNG['telemetry_label_' . str_replace('.', '_', $key)] ?? TelemetrySettings::definitions()[$key][5] ?? $key;
+		return $LNG['telemetry_label_' . str_replace('.', '_', $key)]
+			?? TelemetrySettings::definitions()[$key]['label']
+			?? $key;
 	}
+
 	public static function explanation(string $kind): string
 	{
 		global $LNG;
@@ -105,82 +132,110 @@ final class TelemetryPresentation
 	public function exchange(array $metrics): ?array
 	{
 		global $LNG;
-		if (!isset($metrics['sent'], $metrics['balance'], $metrics['total_balance'])) {
+		if (!isset($metrics['sent'], $metrics['balance'])) {
 			return null;
 		}
+		$totals = [[$LNG['telemetry_sent'], $metrics['sent']], [$LNG['telemetry_returned'], $metrics['returned'] ?? []]];
+		$lifetime = $metrics['lifetime'] ?? null;
+		if ($lifetime) {
+			$totals[] = [self::label('lifetime') . ' / ' . self::label('sent'), $lifetime['sent']];
+			$totals[] = [self::label('lifetime') . ' / ' . self::label('returned'), $lifetime['returned']];
+		}
 		$resources = [];
-		foreach (['sent' => $LNG['telemetry_sent'], 'returned' => $LNG['telemetry_returned'], 'overdue_sent' => $LNG['telemetry_overdue']] as $key => $label) {
-			if ($key === 'overdue_sent' && $metrics[$key] == $metrics['sent']) {
-				continue;
-			}
+		foreach ($totals as [$label, $values]) {
 			$row = ['label' => $label];
 			foreach (['metal', 'crystal', 'deuterium'] as $resource) {
-				$row[$resource] = pretty_number($metrics[$key][$resource] ?? 0);
+				$row[$resource] = pretty_number($values[$resource] ?? 0);
 			}
 			$resources[] = $row;
 		}
-		$pending = !empty($metrics['awaiting_repayment']);
-		$balance = $metrics[$pending ? 'total_balance' : 'balance'];
-		return [
+		$equivalent = $LNG['telemetry_equivalent'];
+		$exchange = [
 			'sender' => (int) $metrics['sender'],
 			'recipient' => (int) $metrics['recipient'],
 			'resources' => $resources,
 			'summary' => [
-				['label' => $pending ? $LNG['telemetry_pending_benefit'] : $LNG['telemetry_unpaid_benefit'], 'value' => pretty_number($balance['remaining']) . $LNG['telemetry_equivalent']],
-				['label' => $LNG['telemetry_threshold'], 'value' => pretty_number($metrics['minimum']) . $LNG['telemetry_equivalent']],
+				['label' => $LNG['telemetry_unpaid_benefit'], 'value' => pretty_number($metrics['balance']['remaining']) . $equivalent],
+				['label' => $LNG['telemetry_threshold'], 'value' => pretty_number($metrics['minimum']) . $equivalent],
 				['label' => $LNG['telemetry_allowance'], 'value' => round($metrics['allowance'] * 100, 3) . ' %'],
-				['label' => $LNG['telemetry_rate'], 'value' => implode(':', $balance['rate'])],
+				['label' => $LNG['telemetry_rate'], 'value' => self::rates($metrics['allowed_rates'])],
 				['label' => $LNG['telemetry_deadline'], 'value' => $this->date((int) $metrics['deadline'])],
 			],
 		];
+		if ($lifetime) {
+			foreach (['deliveries', 'returned_deliveries', 'since'] as $key) {
+				$exchange['summary'][] = ['label' => self::label('lifetime') . ' / ' . self::label($key), 'value' => $this->value($key, $lifetime[$key])];
+			}
+		}
+		return $exchange;
 	}
 
-	public function rows(array $data, string $prefix = '', bool $dates = false): array
+	private static function rates(array $rates): string
+	{
+		return implode(' – ', array_map(static fn($rate) => implode(':', $rate), $rates));
+	}
+
+	/** Turns nested metrics into label/value rows, e.g. "Sent / Metal". */
+	public function rows(array $data, string $prefix = ''): array
 	{
 		global $LNG;
+		$order = array_flip(self::ORDER);
+		uksort($data, static fn($a, $b) => ($order[$a] ?? count($order)) <=> ($order[$b] ?? count($order)));
 		$rows = [];
 		foreach ($data as $key => $value) {
 			// Combat details are already in the timeline.
-			if ($key === 'combat_context' || $key === 'slots') {
+			if ($key === 'combat_context') {
 				continue;
 			}
-			$label = $prefix . ($prefix ? ' / ' : '') . (is_int($key) ? (string) ($key + 1) : self::label($key));
+			$label = is_int($key) ? (string) ($key + 1) : self::label($key);
+			if ($prefix !== '') {
+				$label = $prefix . ' / ' . $label;
+			}
 			if ($key === 'windows') {
 				foreach ($value as [$first, $last]) {
 					$rows[] = ['label' => $label, 'value' => $this->date($first) . ' – ' . $this->date($last)];
 				}
-				continue;
-			}
-			if (is_array($value)) {
-				if ($key === 'seconds') {
-					$value = implode(' → ', array_map([self::class, 'duration'], $value));
-				} elseif ($key === 'rate') {
-					$value = implode(':', $value);
-				} elseif ($key === 'pattern') {
-					$value = implode(' → ', array_map(static fn($v) => is_string($v) ? self::label(rtrim($v, ':')) : $v, $value));
-				} else {
-					$rows = array_merge($rows, $this->rows($value, $label, $key === 'starts'));
-					continue;
+			} elseif ($key === 'seconds' && is_array($value)) {
+				$rows[] = ['label' => $label, 'value' => implode(' → ', array_map([self::class, 'duration'], $value))];
+			} elseif ($key === 'per_hour') {
+				$rows[] = ['label' => $label, 'value' => implode(' · ', $value)];
+			} elseif ($key === 'allowed_rates') {
+				$rows[] = ['label' => $label, 'value' => self::rates($value)];
+			} elseif ($key === 'ships') {
+				foreach ($value as $ship => $count) {
+					$rows[] = ['label' => $label . ' / ' . ($LNG['tech'][$ship] ?? $ship), 'value' => pretty_number($count)];
 				}
+			} elseif (is_array($value)) {
+				$rows = array_merge($rows, $this->rows($value, $label));
+			} else {
+				$rows[] = ['label' => $label, 'value' => $this->value($key, $value)];
 			}
-			if (in_array($key, ['active_seconds', 'largest_gap_seconds', 'span_seconds'], true) && is_numeric($value)) {
-				$value = self::duration((int) $value);
-			} elseif (($dates || in_array($key, ['deadline'], true)) && $value) {
-				$value = $this->date((int) $value);
-			} elseif (is_bool($value)) {
-				$value = $value ? $LNG['telemetry_yes'] : $LNG['telemetry_no'];
-			} elseif ($value === null) {
-				$value = '—';
-			} elseif (in_array($key, ['share', 'allowance'], true) && is_numeric($value)) {
-				$value = round($value * 100, 3) . ' %';
-			} elseif (in_array($key, ['metal', 'crystal', 'deuterium', 'remaining', 'minimum', 'sent_value', 'returned_value', 'observations', 'repeats', 'checks'], true) && is_numeric($value)) {
-				$value = pretty_number($value);
-			} elseif (is_float($value)) {
-				$value = round($value, 3);
-			}
-			$rows[] = ['label' => $label, 'value' => $value];
 		}
 		return $rows;
+	}
+
+	private function value($key, $value)
+	{
+		global $LNG;
+		if ($value === null) {
+			return '—';
+		}
+		if (in_array($key, ['deadline', 'since', 'from', 'to'], true)) {
+			return $value ? $this->date((int) $value) : '—';
+		}
+		if (!is_numeric($value)) {
+			return $value;
+		}
+		if (in_array($key, self::DURATION_KEYS, true)) {
+			return self::duration((int) $value);
+		}
+		if (in_array($key, self::PERCENT_KEYS, true)) {
+			return round($value * 100, 3) . ' %';
+		}
+		if (in_array($key, self::NUMBER_KEYS, true)) {
+			return pretty_number($value);
+		}
+		return is_float($value) ? round($value, 3) : $value;
 	}
 
 	public function timeline(array $events): array
@@ -189,22 +244,20 @@ final class TelemetryPresentation
 		foreach ($events as &$event) {
 			$event['date'] = $this->date((int) $event['at']);
 			$event['label'] = self::label($event['kind'] ?? 'availability');
-			$data = $event['data'] ?? array_intersect_key($event, array_flip(['active_seconds', 'largest_gap_seconds']));
-			if (!empty($event['ip'])) {
-				$data['ip'] = $event['ip'];
-			}
+			$data = $event['data'] ?? array_intersect_key($event, array_flip(self::DURATION_KEYS));
 			$event['details'] = $this->rows($data);
 		}
 		return $events;
 	}
 
-	public function gaps(array $gaps): array
+	/** Client profiles are stored as codes, e.g. "Firefox · other · desktop". */
+	public static function client(string $client): string
 	{
-		foreach ($gaps as &$gap) {
-			$gap['start'] = $this->date((int) $gap['from']);
-			$gap['end'] = $this->date((int) $gap['to']);
-			$gap['label'] = self::label($gap['reason']);
+		global $LNG;
+		$parts = explode(' · ', $client);
+		foreach ($parts as &$part) {
+			$part = $LNG['telemetry_client_' . $part] ?? $part;
 		}
-		return $gaps;
+		return implode(' · ', $parts);
 	}
 }

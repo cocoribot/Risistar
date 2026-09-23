@@ -166,9 +166,6 @@ if (MODE === 'INGAME' || MODE === 'ADMIN' || MODE === 'CRON')
 	{
 		HTTP::redirectTo('index.php?code=3');
 	}
-	if (MODE === 'INGAME') {
-		PlayerTelemetry::interaction((int)$USER['id'], (int)$USER['universe']);
-	}
 	
 	$LNG	= new Language($USER['lang']);
 	$LNG->includeData(array('L18N', 'INGAME', 'TECH', 'CUSTOM'));
@@ -215,6 +212,9 @@ if (MODE === 'INGAME' || MODE === 'ADMIN' || MODE === 'CRON')
 				$session->planetId = $USER['id_planet'];
 			}
 		}
+
+		$session->telemetryPage = PlayerTelemetry::interaction((int)$USER['id'], (int)$USER['universe'],
+			(int)$session->planetId, $session->telemetryPage);
 		
 		$USER['factor']		= getFactors($USER);
 		$USER['PLANETS']	= getPlanets($USER);

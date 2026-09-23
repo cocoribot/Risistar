@@ -185,7 +185,7 @@ class ShowShipyardPage extends AbstractGamePage
 		}
 		
 		if ($telemetryBefore !== $PLANET['b_hangar_id']) {
-			PlayerTelemetry::action('queue.shipyard', 0, 0, ['command' => $action === 'delete' ? 'cancel' : 'insert']);
+			PlayerTelemetry::action('queue.shipyard');
 		}
 		$elementInQueue	= array();
 		$ElementQueue 	= unserialize($PLANET['b_hangar_id']);

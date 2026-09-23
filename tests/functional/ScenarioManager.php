@@ -16,6 +16,8 @@ require_once __DIR__ . '/Scenarios/MoonDestructionEdgeCasesScenario.php';
 require_once __DIR__ . '/Scenarios/ExpeditionScenario.php';
 require_once __DIR__ . '/Scenarios/MipScenario.php';
 require_once __DIR__ . '/Scenarios/SpyScenario.php';
+require_once __DIR__ . '/Scenarios/TelemetryScenario.php';
+require_once __DIR__ . '/Scenarios/TelemetrySizeScenario.php';
 
 class ScenarioManager
 {
@@ -34,6 +36,8 @@ class ScenarioManager
         self::register(new MoonDestructionScenario());
         self::register(new FlightCombinationsScenario());
         self::register(new MoonDestructionEdgeCasesScenario());
+        self::register(new TelemetryScenario());
+        self::register(new TelemetrySizeScenario());
     }
 
     public static function register(ScenarioInterface $scenario): void

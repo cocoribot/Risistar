@@ -35,9 +35,6 @@ function ShowModulePage()
 		$module[$id] = ($mode == 'aktiv') ? 1 : 0;
 		$config->moduls = implode(";", $module);
 		$config->save();
-		if ($id === MODULE_TELEMETRY) {
-			TelemetryStore::switchChanged((int)Universe::getEmulated(), 'disabled', (bool)$module[$id], time());
-		}
 		ClearCache();
 	}
 	

@@ -310,7 +310,7 @@ class ShowBuildingsPage extends AbstractGamePage
 			}
 			
 			if ($telemetryBefore !== $PLANET['b_building_id']) {
-				PlayerTelemetry::action('queue.buildings', 0, 0, ['command' => $TheCommand]);
+				PlayerTelemetry::action('queue.buildings');
 			}
 			$this->redirectTo('game.php?page=buildings');
 		}

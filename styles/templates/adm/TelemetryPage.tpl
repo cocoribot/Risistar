@@ -63,7 +63,6 @@
 <button type="submit">{$LNG.telemetry_ui_apply}</button>
 </form>
 {/if}
-{if !$telemetryMaster}<p class="notice">{$LNG.telemetry_ui_master_disabled}</p>{/if}
 {if $telemetryMessage}<p class="notice">{$telemetryMessage|escape}</p>{/if}
 {if $telemetryError}<p class="error" role="alert">{$telemetryError|escape}</p>{/if}
 <nav><a href="?page=telemetry">{$LNG.telemetry_ui_review}</a><a href="?page=telemetry&amp;status=follow_up">{$LNG.telemetry_ui_follow_up}</a><a href="?page=telemetry&amp;status=dismissed">{$LNG.telemetry_ui_dismissed_plural}</a><a href="?page=telemetry&amp;view=settings#telemetry-settings">{$LNG.telemetry_ui_settings}</a>{if !$telemetryShowSettings}<a href="#telemetry-health" onclick="document.getElementById('telemetry-health').open=true">{$LNG.telemetry_ui_health}</a>{/if}</nav>
@@ -77,7 +76,6 @@
 {foreach $telemetryCase.evaluations as $evaluation}
 <details {if $evaluation@first}open{/if}><summary>{$evaluation.label|escape} — {$evaluation.date|escape}</summary>
 {if !$evaluation.matches}<p>{$LNG.telemetry_ui_no_match}</p>{/if}
-{if $evaluation.support}<p>{$LNG.telemetry_ui_other_observations}{implode(', ', $evaluation.support)|escape}.</p>{/if}
 {if $evaluation.exchange}
 <p><strong>{$telemetryNames[$evaluation.exchange.sender]|escape} → {$telemetryNames[$evaluation.exchange.recipient]|escape}</strong></p>
 <table class="resources"><thead><tr><th>{$LNG.telemetry_ui_resources}</th><th>{$LNG.telemetry_ui_metal}</th><th>{$LNG.telemetry_ui_crystal}</th><th>{$LNG.telemetry_ui_deuterium}</th></tr></thead><tbody>
@@ -88,12 +86,11 @@
 <table class="metrics"><tbody>{foreach $evaluation.metrics as $row}<tr><th>{$row.label|escape}</th><td>{$row.value|escape}</td></tr>{/foreach}</tbody></table>
 {/if}
 <details><summary>{$LNG.telemetry_ui_thresholds}</summary><table class="metrics">{foreach $evaluation.thresholds as $row}<tr><th>{$row.label|escape}</th><td>{$row.value|escape}</td></tr>{/foreach}</table></details>
-{foreach $evaluation.gaps as $gap}<p class="notice">{$gap.start|escape} — {$gap.end|escape} : {$gap.label|escape}.</p>{/foreach}
 {if $evaluation.truncated}<p class="notice">{$LNG.telemetry_ui_partial_batch}</p>{/if}
 {if $evaluation.sampled}<p>{$LNG.telemetry_ui_sample_first}{$evaluation.count}{$LNG.telemetry_ui_sample_last}</p>{/if}
 <div class="evidence"><table class="timeline"><thead><tr><th>{$LNG.telemetry_ui_date}</th><th>{$LNG.telemetry_ui_actor_target}</th><th>{$LNG.telemetry_ui_action_fleet}</th><th>{$LNG.telemetry_ui_context}</th></tr></thead><tbody>
 {foreach $evaluation.timeline as $event}
-<tr><td>{$event.date|escape}</td><td>{$telemetryNames[$event.actor|default:0]|default:'—'|escape} → {$telemetryNames[$event.target|default:0]|default:'—'|escape}</td><td>{$event.label|escape} {if $event.fleet_id}#{$event.fleet_id}{/if}</td><td>{foreach $event.details as $row}<span>{$row.label|escape} : {$row.value|escape}</span><br>{/foreach}</td></tr>
+<tr><td>{$event.date|escape}</td><td>{$telemetryNames[$event.actor|default:0]|default:'—'|escape} → {$telemetryNames[$event.target|default:0]|default:'—'|escape}</td><td>{$event.label|escape}</td><td>{foreach $event.details as $row}<span>{$row.label|escape} : {$row.value|escape}</span><br>{/foreach}</td></tr>
 {/foreach}
 </tbody></table></div>
 </details>
@@ -104,7 +101,7 @@
 <label>{$LNG.telemetry_ui_note}<textarea name="note" maxlength="4000"></textarea></label><button type="submit">{$LNG.telemetry_ui_save_decision}</button>
 </form>
 <h3>{$LNG.telemetry_ui_review_history}</h3>
-{foreach $telemetryCase.review_history as $entry}<p>{$entry.date|escape}{$LNG.telemetry_ui_moderator}{$entry.admin} : {$entry.status|escape} — {$entry.note|escape}</p>{/foreach}
+{foreach $telemetryCase.review_history as $entry}<p>{$entry.date|escape}{if $entry.admin}{$LNG.telemetry_ui_moderator}{$entry.admin}{/if} : {$entry.status|escape} — {$entry.note|escape}</p>{/foreach}
 {/if}
 <details {if $telemetryAccount}open{/if}><summary>{$LNG.telemetry_ui_lookup}</summary>
 <form method="get" action="admin.php">
@@ -149,17 +146,19 @@
 {foreach $telemetryAccount.days as $day}{foreach $day.windows as $window}<tr><td>{$day.day|escape}</td>{if $telemetryAccount.other}<td>{$day.name|escape}</td>{/if}<td>{$window.range|escape}</td><td>{$window.duration|escape}</td></tr>{/foreach}{/foreach}
 </tbody></table>
 </details>
-{foreach $telemetryAccount.gaps as $gap}<p class="notice">{$gap.start|escape} — {$gap.end|escape} : {$gap.label|escape}.</p>{/foreach}
 </section>
-<section class="panel"><h3>{$LNG.telemetry_ui_actions_since}{$telemetryAccount.event_start|escape}</h3>
+<section class="panel"><h3>{$LNG.telemetry_ui_actions_since}{$telemetryAccount.start|escape}</h3>
 <table class="comparison"><thead><tr><th>{$LNG.telemetry_ui_actions}</th>{foreach $telemetryAccount.players as $player}<th>{$player.username|escape}</th>{/foreach}</tr></thead><tbody>
 <tr><th>{$LNG.telemetry_ui_sends}</th>{foreach $telemetryAccount.players as $player}<td>{$player.sends}</td>{/foreach}</tr>
 <tr><th>{$LNG.telemetry_ui_recalls}</th>{foreach $telemetryAccount.players as $player}<td>{$player.recalls}</td>{/foreach}</tr>
 <tr><th>{$LNG.telemetry_ui_ip_addresses}</th>{foreach $telemetryAccount.players as $player}<td>{$player.network.ips}</td>{/foreach}</tr>
 <tr><th>{$LNG.telemetry_ui_clients}</th>{foreach $telemetryAccount.players as $player}<td>{$player.network.clients}</td>{/foreach}</tr>
 <tr><th>{$LNG.telemetry_ui_galaxy_views}</th>{foreach $telemetryAccount.players as $player}<td>{$player.reads}</td>{/foreach}</tr>
+<tr><th>{$LNG.telemetry_ui_page_loads}</th>{foreach $telemetryAccount.players as $player}<td>{$player.pages}</td>{/foreach}</tr>
+<tr><th>{$LNG.telemetry_ui_planet_switches}</th>{foreach $telemetryAccount.players as $player}<td>{$player.switches}</td>{/foreach}</tr>
+<tr><th>{$LNG.telemetry_ui_alliance_views}</th>{foreach $telemetryAccount.players as $player}<td>{$player.alliance}</td>{/foreach}</tr>
+<tr><th>{$LNG.telemetry_ui_queue_reloads}</th>{foreach $telemetryAccount.players as $player}<td>{$player.reloads}</td>{/foreach}</tr>
 </tbody></table>
-{foreach $telemetryAccount.event_gaps as $gap}<p class="notice">{$gap.start|escape} — {$gap.end|escape} : {$gap.label|escape}.</p>{/foreach}
 <details><summary>{$LNG.telemetry_ui_network}</summary>
 <p>{$LNG.telemetry_ui_client_reported}</p>
 {foreach $telemetryAccount.players as $player}
@@ -173,7 +172,7 @@
 </details>
 <details><summary>{$LNG.telemetry_ui_recent_actions}</summary>
 <table><tr><th>{$LNG.telemetry_ui_date}</th><th>{$LNG.telemetry_ui_actor_target}</th><th>{$LNG.telemetry_ui_action}</th><th>{$LNG.telemetry_ui_context}</th></tr>
-{foreach $telemetryAccount.events as $event}<tr><td>{$event.date|escape}</td><td>{$telemetryNames[$event.actor]|default:'—'|escape} → {$telemetryNames[$event.target]|default:'—'|escape}</td><td>{$event.label|escape} {if $event.fleet_id}#{$event.fleet_id}{/if}</td><td>{foreach $event.details as $row}{$row.label|escape} : {$row.value|escape}<br>{/foreach}</td></tr>{/foreach}
+{foreach $telemetryAccount.events as $event}<tr><td>{$event.date|escape}</td><td>{$telemetryNames[$event.actor]|default:'—'|escape} → {$telemetryNames[$event.target]|default:'—'|escape}</td><td>{$event.label|escape}</td><td>{foreach $event.details as $row}{$row.label|escape} : {$row.value|escape}<br>{/foreach}</td></tr>{/foreach}
 </table></details>
 </section>
 {/if}
@@ -189,7 +188,6 @@
 <details id="telemetry-health"><summary>{$LNG.telemetry_ui_health}</summary>
 
 <table class="metrics">{foreach $telemetryHealth as $row}<tr><th>{$row.label|escape}</th><td>{$row.value|escape}</td></tr>{/foreach}</table>
-{foreach $telemetryGaps as $gap}<p class="notice">{$gap.start|escape} — {$gap.end|escape} : {$gap.label|escape}.</p>{/foreach}
 </details>
 {/if}
 {if $telemetryShowSettings}
@@ -198,7 +196,7 @@
 
 <form class="settings-form" method="post" action="?page=telemetry&amp;view=settings">
 <input type="hidden" name="sid" value="{$telemetryToken|escape}"><input type="hidden" name="action" value="settings">
-{foreach $telemetryFields as $group=>$fields}<details class="panel" id="telemetry-group-{$group}" {if $group=='collection' || $group=='storage'}open{/if}><summary>{$telemetryGroups[$group]|escape}</summary>
+{foreach $telemetryFields as $group=>$fields}<details class="panel" id="telemetry-group-{$group}" {if $group=='collection'}open{/if}><summary>{$telemetryGroups[$group]|escape}</summary>
 {foreach $fields as $field}<div class="setting-row">
 <div><label for="telemetry-{$field.key}">{$field.label|escape}</label>{if $field.help}<small>{$field.help|escape}</small>{/if}</div>
 <div class="setting-control">

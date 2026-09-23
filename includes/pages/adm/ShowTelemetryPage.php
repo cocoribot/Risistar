@@ -3,9 +3,10 @@
 require_once ROOT_PATH . 'includes/classes/TelemetryDetectors.class.php';
 require_once ROOT_PATH . 'includes/classes/TelemetryReview.class.php';
 require_once ROOT_PATH . 'includes/classes/TelemetryPresentation.class.php';
+
 function ShowTelemetryPage()
 {
-	global $USER, $LNG;
+	global $LNG;
 	$session = Session::load();
 	if (!allowedTo('ShowTelemetryPage') || $session->adminAccess != 1) {
 		http_response_code(403);
@@ -15,221 +16,51 @@ function ShowTelemetryPage()
 	}
 	$universe = (int) Universe::getEmulated();
 	$now = time();
-	// Universe selection saves and closes the session; persist the display timezone before review work.
+	// Choosing a universe saves and closes the session; open it again to save the display timezone.
 	if (session_status() !== PHP_SESSION_ACTIVE) {
 		session_start();
 	}
 	$token = session_id();
-	$timezoneName = HTTP::_GP('timezone', $session->telemetryTimezone ?? 'Europe/Paris');
-	if (!in_array($timezoneName, DateTimeZone::listIdentifiers(), true)) {
-		$timezoneName = 'Europe/Paris';
-	}
-	$timezone = new DateTimeZone($timezoneName);
-	$session->telemetryTimezone = $timezoneName;
-	$session->save();
-	$message = '';
-	$error = '';
-	$warnings = [];
-	$accounts = [];
-	$names = [];
-	$actor = max(0, (int) ($_GET['account'] ?? 0));
-	$id = max(0, (int) ($_GET['id'] ?? $_POST['id'] ?? 0));
-	$case = null;
-	$account = [];
-	$settingsHistory = [];
+	$timezone = telemetryTimezone($session);
+	$view = new TelemetryPresentation($timezone);
+	$settings = TelemetrySettings::get($universe);
 	$showSettings = ($_GET['view'] ?? '') === 'settings' || ($_POST['action'] ?? '') === 'settings';
 	$status = $_GET['status'] ?? 'open';
 	if (!in_array($status, ['open', 'follow_up', 'dismissed'], true)) {
 		$status = 'open';
 	}
-	$s = TelemetrySettings::get($universe);
-	$view = new TelemetryPresentation($timezone);
-	$format = static fn($at) => $view->date((int) $at);
+	$actor = max(0, (int) ($_GET['account'] ?? 0));
+	$id = max(0, (int) ($_GET['id'] ?? $_POST['id'] ?? 0));
+	$before = max(1, (int) ($_GET['before'] ?? PHP_INT_MAX));
+	$message = '';
+	$error = '';
+	$case = null;
+	$account = [];
+	$warnings = [];
+	$accounts = [];
+	$names = [];
+	$settingsHistory = [];
 	try {
 		$store = new TelemetryStore(TelemetryConnection::open());
 		$review = new TelemetryReview($store);
 		if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-			if (!is_string($_POST['sid'] ?? null) || !hash_equals($token, $_POST['sid'])) {
-				throw new InvalidArgumentException($LNG['telemetry_expired']);
-			}
-			$action = $_POST['action'] ?? '';
-			if ($action === 'settings') {
-				$input = $_POST['settings'] ?? [];
-				if (!is_array($input)) {
-					throw new InvalidArgumentException($LNG['telemetry_invalid_settings']);
-				}
-				foreach (TelemetrySettings::definitions() as $name => $definition) {
-					if ($definition[4] === 'fraction' && is_numeric($input[$name] ?? null)) {
-						$input[$name] = (float) $input[$name] / 100;
-					}
-				}
-				$review->saveSettings($universe, (int) $USER['id'], $input, $now);
-				$s = TelemetrySettings::get($universe);
-				$message = $LNG['telemetry_settings_saved'];
-			} elseif ($action === 'review') {
-				$review->decide(
-					$universe,
-					(int) $USER['id'],
-					(int) ($_POST['id'] ?? 0),
-					(string) ($_POST['status'] ?? ''),
-					(string) ($_POST['note'] ?? ''),
-					$now
-				);
-				$message = $LNG['telemetry_decision_saved'];
-			}
+			$message = telemetryHandlePost($review, $universe, $token, $now);
+			$settings = TelemetrySettings::get($universe);
 		}
 		if ($id) {
-			$case = $review->evidence($universe, $id);
-			$case['explanation'] = TelemetryPresentation::explanation($case['kind']);
-			$case['formatted_first'] = $format($case['first_seen']);
-			$case['formatted_last'] = $format($case['last_seen']);
-			$case['kind_label'] = TelemetryPresentation::label($case['kind']);
-			$case['strength_label'] = TelemetryPresentation::label($case['strength']);
-			$case['status_label'] = TelemetryPresentation::label($case['status']);
-			$case['evaluations'] = [];
-			foreach (['latest_evidence' => $LNG['telemetry_latest_evaluation'], 'evidence' => $LNG['telemetry_opening']] as $key => $label) {
-				if (!$case[$key]) {
-					continue;
-				}
-				$evidence = $case[$key];
-				$thresholds = [];
-				foreach ($case[$key === 'evidence' ? 'settings' : 'latest_settings'] as $name => $value) {
-					$definition = TelemetrySettings::definitions()[$name] ?? null;
-					if ($definition === null) {
-						continue;
-					}
-					$thresholds[] = ['label' => $definition[5], 'value' => TelemetryPresentation::setting($name, $value)];
-				}
-				$case['evaluations'][] = [
-					'label' => $label,
-					'date' => $format($evidence['evaluated_at'] ?? $case['first_seen']),
-					'matches' => $evidence['matches'] ?? true,
-					'support' => array_map([TelemetryPresentation::class, 'label'], array_diff($evidence['supporting_checks'] ?? [], [$case['kind']])),
-					'exchange' => $view->exchange($evidence['metrics']),
-					'metrics' => $view->rows($evidence['metrics']),
-					'thresholds' => $thresholds,
-					'timeline' => $view->timeline($evidence['timeline']),
-					'sampled' => $evidence['timeline_sampled'] ?? false,
-					'count' => $evidence['timeline_count'] ?? count($evidence['timeline']),
-					'gaps' => $view->gaps($evidence['coverage']['gaps'] ?? []),
-					'truncated' => !empty($evidence['coverage']['truncated']),
-				];
-			}
-			foreach ($case['review_history'] as &$entry) {
-				$entry['date'] = $format($entry['at']);
-				$data = json_decode($entry['data'], true);
-				$entry['status'] = TelemetryPresentation::label($data['after']);
-				$entry['note'] = $data['note'];
-			}
-			unset($entry);
+			$case = telemetryCase($review, $view, $universe, $id);
 		}
 		if ($actor) {
-			$other = max(0, (int) ($_GET['other'] ?? 0));
-			if ($other === $actor) {
-				$other = 0;
-			}
-			$period = min((int) $s['daily_days'], max(1, (int) ($_GET['days'] ?? 7)));
-			$from = (new DateTimeImmutable('@' . $now))->setTimezone($timezone)->setTime(0, 0)->modify('-' . ($period - 1) . ' days')->getTimestamp();
-			$eventFrom = max($from, $now - $s['event_days'] * 86400);
-			$account = [
-				'id' => $actor,
-				'other' => $other,
-				'period' => $period,
-				'players' => [],
-				'events' => [],
-				'start' => $format($from),
-				'end' => $format($now),
-				'event_start' => $format($eventFrom),
-			];
-			foreach (array_filter([$actor, $other]) as $accountId) {
-				$player = Database::get()->selectSingle(
-					'SELECT id,username FROM %%USERS%% WHERE universe=:universe AND id=:id',
-					[':universe' => $universe, ':id' => $accountId]
-				);
-				if (!$player) {
-					$player = ['id' => $accountId, 'username' => $LNG['telemetry_deleted_account']];
-				}
-				$activity = $view->activity($store->daily($universe, $accountId, $from), $from, $now);
-				$counts = $store->actionCounts($universe, $accountId, $eventFrom, $now);
-				$reads = 0;
-				foreach ($counts as $kind => $count) {
-					if ($kind === 'galaxy.view') {
-						$reads += (int) $count;
-					}
-				}
-				$player['activity'] = $activity;
-				$player['sends'] = $counts['fleet.send'] ?? 0;
-				$player['recalls'] = $counts['fleet.recall'] ?? 0;
-				$player['reads'] = $reads;
-				$player['network'] = $store->network($universe, $accountId, $eventFrom, $now);
-				foreach ($player['network']['rows'] as &$network) {
-					$network['first_seen'] = $format((int) $network['first_seen']);
-					$network['last_seen'] = $format((int) $network['last_seen']);
-				}
-				unset($network);
-				$account['players'][] = $player;
-				$account['events'] = array_merge($account['events'], array_slice($store->events($universe, $accountId, $eventFrom, 500, null, true), 0, 500));
-			}
-			$account['days'] = [];
-			foreach ($account['players'][0]['activity']['days'] as $date => $unused) {
-				foreach ($account['players'] as $player) {
-					$account['days'][] = ['actor' => $player['id'], 'name' => $player['username']] + $player['activity']['days'][$date];
-				}
-			}
-			$account['events'] = array_reverse($view->timeline($account['events']));
-			$account['gaps'] = $view->gaps(TelemetryStore::interruptions($universe, $from, $now, false));
-			$account['event_gaps'] = $view->gaps(TelemetryStore::interruptions($universe, $eventFrom, $now));
-		}
-		$before = max(1, (int) ($_GET['before'] ?? PHP_INT_MAX));
-		if ($actor) {
-			$warnings = $store->query(
-				'SELECT id,actor,other,kind,strength,explanation,observation_start,observation_end,status FROM %%TELEMETRY_WARNINGS%% WHERE universe=? AND (actor=? OR other=?) AND id<? ORDER BY id DESC LIMIT 51',
-				[$universe, $actor, $actor, $before]
-			)->fetchAll(PDO::FETCH_ASSOC);
+			$account = telemetryAccount($store, $view, $universe, $actor, $timezone, $now);
+			$warnings = $store->accountWarnings($universe, $actor, $before);
 		} elseif (!$id && !$showSettings) {
-			$accounts = $store->query(
-				'SELECT account,COUNT(*) AS total,GROUP_CONCAT(DISTINCT kind ORDER BY kind) AS kinds,MAX(observation_end) AS last_seen FROM (
-					SELECT actor AS account,kind,observation_end FROM %%TELEMETRY_WARNINGS%% WHERE universe=? AND status=?
-					UNION ALL
-					SELECT other AS account,kind,observation_end FROM %%TELEMETRY_WARNINGS%% WHERE universe=? AND status=? AND other>0 AND other<>actor
-				) AS warnings WHERE account<? GROUP BY account ORDER BY account DESC LIMIT 51',
-				[$universe, $status, $universe, $status, $before]
-			)->fetchAll(PDO::FETCH_ASSOC);
+			$accounts = $store->warnedAccounts($universe, $status, $before);
 		}
-		$accountIds = array_merge(array_column($accounts, 'account'), array_column($account['players'] ?? [], 'id'));
-		$events = $account['events'] ?? [];
-		foreach ($case['evaluations'] ?? [] as $evaluation) {
-			$events = array_merge($events, $evaluation['timeline']);
-		}
-		foreach ($events as $event) {
-			$accountIds[] = $event['actor'] ?? 0;
-			$accountIds[] = $event['target'] ?? 0;
-		}
-		foreach ($warnings as $warning) {
-			$accountIds[] = $warning['actor'];
-			$accountIds[] = $warning['other'];
-		}
-		if ($case) {
-			$accountIds[] = $case['actor'];
-			$accountIds[] = $case['other'];
-		}
-		$accountIds = array_unique(array_filter(array_map('intval', $accountIds)));
-		if ($accountIds) {
-			$players = Database::get()->select(
-				'SELECT id,username FROM %%USERS%% WHERE universe=:universe AND id IN (' . implode(',', $accountIds) . ')',
-				[':universe' => $universe]
-			);
-			foreach ($players as $player) {
-				$names[$player['id']] = $player['username'] . ' (' . $player['id'] . ')';
-			}
-			foreach ($accountIds as $accountId) {
-				$names[$accountId] ??= $LNG['telemetry_deleted_account'] . ' (' . $accountId . ')';
-			}
-		}
+		$names = telemetryNames($universe, telemetryAccountIds($case, $account, $warnings, $accounts));
 		foreach ($accounts as &$row) {
 			$row['name'] = $names[$row['account']];
 			$row['kinds'] = implode(', ', array_map([TelemetryPresentation::class, 'label'], explode(',', $row['kinds'])));
-			$row['date'] = $format($row['last_seen']);
+			$row['date'] = $view->date((int) $row['last_seen']);
 		}
 		unset($row);
 		foreach ($warnings as &$warning) {
@@ -237,81 +68,334 @@ function ShowTelemetryPage()
 			$warning['kind_label'] = TelemetryPresentation::label($warning['kind']);
 			$warning['strength_label'] = TelemetryPresentation::label($warning['strength']);
 			$warning['status_label'] = TelemetryPresentation::label($warning['status']);
-			$warning['dates'] = $format($warning['observation_start']) . ' — ' . $format($warning['observation_end']);
+			$warning['dates'] = $view->date((int) $warning['observation_start']) . ' — ' . $view->date((int) $warning['observation_end']);
 		}
 		unset($warning);
-		$settingsHistory = $store->query("SELECT admin,at,data FROM %%TELEMETRY_AUDIT%% WHERE universe=? AND action='settings' ORDER BY at DESC LIMIT 20", [$universe])->fetchAll(PDO::FETCH_ASSOC);
-		foreach ($settingsHistory as &$entry) {
-			$entry['date'] = $format($entry['at']);
-			$entry['changes'] = [];
-			foreach (json_decode($entry['data'], true) as $name => $change) {
-				$entry['changes'][] = [
-					'label' => TelemetryPresentation::label($name),
-					'value' => TelemetryPresentation::setting($name, $change['before']) . ' → ' . TelemetryPresentation::setting($name, $change['after']),
-				];
-			}
-		}
-		unset($entry);
+		$settingsHistory = telemetrySettingsHistory($store, $view, $universe);
 	} catch (Throwable $e) {
 		if (!$e instanceof InvalidArgumentException) {
 			error_log('Telemetry admin failed: ' . get_class($e) . ' (' . $e->getCode() . ')');
 		}
 		$error = $e instanceof InvalidArgumentException ? $e->getMessage() : $LNG['telemetry_unavailable'];
 	}
-	$health = TelemetryStore::health();
-	$healthRows = [
-		['label' => $LNG['telemetry_collection'], 'value' => !TelemetryConnection::masterEnabled() || !$s['enabled'] ? $LNG['telemetry_disabled'] :
-			(TelemetryConnection::shared() && !empty($health['suspended']) ? $LNG['telemetry_label_storage_full'] : $LNG['telemetry_enabled'])],
-		['label' => $LNG['telemetry_events'], 'value' => !empty($health['suspended']) ? $LNG['telemetry_full'] : ($s['events_enabled'] ? $LNG['telemetry_events_enabled'] : $LNG['telemetry_events_disabled'])],
-		['label' => $LNG['telemetry_last_write'], 'value' => isset($health['success']) ? $format($health['success']) : $LNG['telemetry_none']],
-		['label' => $LNG['telemetry_last_pass'], 'value' => isset($health['analysis_' . $universe]) ? $format($health['analysis_' . $universe]['at']) : $LNG['telemetry_none']],
-		['label' => $LNG['telemetry_last_analysis'], 'value' => !empty($health['analysis_' . $universe]['completed_at']) ? $format($health['analysis_' . $universe]['completed_at']) : $LNG['telemetry_none_female']],
-		['label' => $LNG['telemetry_allocated'], 'value' => isset($health['allocated_mb']) ? round($health['allocated_mb'], 1) . ' ' . $LNG['telemetry_unit_mb'] . ' / ' . $s['budget_mb'] . ' ' . $LNG['telemetry_unit_mb'] : $LNG['telemetry_measure_pending']],
-		['label' => $LNG['telemetry_event_retention'], 'value' => ($health['effective_event_days'] ?? $s['event_days']) . ' ' . $LNG['telemetry_unit_days']],
-		['label' => $LNG['telemetry_activity_retention'], 'value' => $s['daily_days'] . ' ' . $LNG['telemetry_unit_days']],
-	];
-	if (!empty($health['failure'])) {
-		$healthRows[] = ['label' => $LNG['telemetry_collection_failure'], 'value' => TelemetryPresentation::label($health['failure'])];
-	}
-	$fields = [];
-	foreach (TelemetrySettings::definitions() as $key => $d) {
-		$scale = $d[4] === 'fraction' ? 100 : 1;
-		$fields[$d[0]][] = [
-			'key' => $key,
-			'value' => $s[$key] * $scale,
-			'default' => $d[1] * $scale,
-			'min' => $d[2] * $scale,
-			'max' => $d[3] * $scale,
-			'unit' => $scale === 100 ? '%' : ($LNG['telemetry_unit_' . $d[4]] ?? $d[4]),
-			'checkbox' => $d[4] === '0/1',
-			'label' => $d[5],
-			'help' => $d[6],
-			'step' => is_int($d[1]) ? '1' : 'any',
-		];
+	$pageSize = TelemetryStore::PAGE_SIZE;
+	$next = 0;
+	if (count($warnings) > $pageSize) {
+		$next = $warnings[$pageSize - 1]['id'];
+	} elseif (count($accounts) > $pageSize) {
+		$next = $accounts[$pageSize - 1]['account'];
 	}
 	$template = new template();
 	$template->assign_vars([
 		'telemetryMessage' => $message,
 		'telemetryError' => $error,
-		'telemetryWarnings' => array_slice($warnings, 0, 50),
-		'telemetryAccounts' => array_slice($accounts, 0, 50),
+		'telemetryWarnings' => array_slice($warnings, 0, $pageSize),
+		'telemetryAccounts' => array_slice($accounts, 0, $pageSize),
 		'telemetryNames' => $names,
-		'telemetryNext' => count($warnings) > 50 ? $warnings[49]['id'] : (count($accounts) > 50 ? $accounts[49]['account'] : 0),
+		'telemetryNext' => $next,
 		'telemetryCase' => $case,
 		'telemetryAccount' => $account,
 		'telemetryShowSettings' => $showSettings,
-		'telemetryEnabled' => (bool) $s['enabled'],
-		'telemetryMaxDays' => $s['daily_days'],
-		'telemetryFields' => $fields,
+		'telemetryEnabled' => (bool) $settings['enabled'],
+		'telemetryMaxDays' => TelemetrySettings::DAILY_DAYS,
+		'telemetryFields' => telemetrySettingFields($settings),
 		'telemetryToken' => $token,
-		'telemetryHealth' => $healthRows,
+		'telemetryHealth' => telemetryHealth($view, $universe, $settings),
 		'telemetryStatus' => $status,
 		'telemetrySettingsHistory' => $settingsHistory,
-		'telemetryGaps' => $view->gaps(TelemetryStore::interruptions($universe, $now - $s['daily_days'] * 86400, $now)),
-		'telemetryMaster' => TelemetryConnection::masterEnabled(),
 		'telemetryTimezones' => ['UTC' => 'UTC'] + get_timezone_selector(),
 		'telemetryTimezone' => $timezone->getName(),
-		'telemetryGroups' => ['collection' => $LNG['telemetry_collection'], 'activity' => $LNG['telemetry_group_activity'], 'automation' => $LNG['telemetry_group_automation'], 'pushing' => $LNG['telemetry_group_pushing'], 'storage' => $LNG['telemetry_group_storage'], 'advanced' => $LNG['telemetry_group_advanced']],
+		'telemetryGroups' => [
+			'collection' => $LNG['telemetry_collection'],
+			'activity' => $LNG['telemetry_group_activity'],
+			'automation' => $LNG['telemetry_group_automation'],
+			'pushing' => $LNG['telemetry_group_pushing'],
+		],
 	]);
 	$template->show('TelemetryPage.tpl');
+}
+
+function telemetryTimezone($session): DateTimeZone
+{
+	$name = HTTP::_GP('timezone', $session->telemetryTimezone ?? 'Europe/Paris');
+	if (!in_array($name, DateTimeZone::listIdentifiers(), true)) {
+		$name = 'Europe/Paris';
+	}
+	$session->telemetryTimezone = $name;
+	$session->save();
+	return new DateTimeZone($name);
+}
+
+function telemetryHandlePost(TelemetryReview $review, int $universe, string $token, int $now): string
+{
+	global $USER, $LNG;
+	if (!is_string($_POST['sid'] ?? null) || !hash_equals($token, $_POST['sid'])) {
+		throw new InvalidArgumentException($LNG['telemetry_expired']);
+	}
+	$action = $_POST['action'] ?? '';
+	if ($action === 'settings') {
+		$input = $_POST['settings'] ?? [];
+		if (!is_array($input)) {
+			throw new InvalidArgumentException($LNG['telemetry_invalid_settings']);
+		}
+		foreach (TelemetrySettings::definitions() as $name => $definition) {
+			$scale = TelemetrySettings::scale($definition);
+			if ($scale !== 1 && is_numeric($input[$name] ?? null)) {
+				$input[$name] = (float) $input[$name] / $scale;
+			}
+		}
+		$review->saveSettings($universe, (int) $USER['id'], $input, $now);
+		return $LNG['telemetry_settings_saved'];
+	}
+	if ($action === 'review') {
+		$review->decide(
+			$universe,
+			(int) $USER['id'],
+			(int) ($_POST['id'] ?? 0),
+			(string) ($_POST['status'] ?? ''),
+			(string) ($_POST['note'] ?? ''),
+			$now
+		);
+		return $LNG['telemetry_decision_saved'];
+	}
+	return '';
+}
+
+function telemetryCase(TelemetryReview $review, TelemetryPresentation $view, int $universe, int $id): array
+{
+	global $LNG;
+	$case = $review->evidence($universe, $id);
+	$case['explanation'] = TelemetryPresentation::explanation($case['kind']);
+	$case['formatted_first'] = $view->date((int) $case['first_seen']);
+	$case['formatted_last'] = $view->date((int) $case['last_seen']);
+	$case['kind_label'] = TelemetryPresentation::label($case['kind']);
+	$case['strength_label'] = TelemetryPresentation::label($case['strength']);
+	$case['status_label'] = TelemetryPresentation::label($case['status']);
+	$case['evaluations'] = [];
+	$evaluations = [
+		'latest_evidence' => [$LNG['telemetry_latest_evaluation'], 'latest_settings'],
+		'evidence' => [$LNG['telemetry_opening'], 'settings'],
+	];
+	foreach ($evaluations as $key => [$label, $settingsKey]) {
+		$evidence = $case[$key];
+		if (!$evidence) {
+			continue;
+		}
+		$thresholds = [];
+		$definitions = TelemetrySettings::definitions();
+		foreach ($case[$settingsKey] as $name => $value) {
+			if (isset($definitions[$name])) {
+				$thresholds[] = ['label' => $definitions[$name]['label'], 'value' => TelemetryPresentation::setting($name, $value)];
+			}
+		}
+		$case['evaluations'][] = [
+			'label' => $label,
+			'date' => $view->date((int) ($evidence['evaluated_at'] ?? $case['first_seen'])),
+			'matches' => $evidence['matches'] ?? true,
+			'exchange' => $view->exchange($evidence['metrics']),
+			'metrics' => $view->rows($evidence['metrics']),
+			'thresholds' => $thresholds,
+			'timeline' => $view->timeline($evidence['timeline']),
+			'sampled' => $evidence['timeline_sampled'] ?? false,
+			'count' => $evidence['timeline_count'] ?? count($evidence['timeline']),
+			'truncated' => !empty($evidence['truncated']),
+		];
+	}
+	foreach ($case['review_history'] as &$entry) {
+		$data = json_decode($entry['data'], true);
+		$entry['date'] = $view->date((int) $entry['at']);
+		$entry['status'] = TelemetryPresentation::label($data['after']);
+		$entry['note'] = empty($data['reopened']) ? $data['note'] : $LNG['telemetry_reopened'];
+	}
+	unset($entry);
+	return $case;
+}
+
+/** Activity of one account, or two side by side when "other" is set. */
+function telemetryAccount(
+	TelemetryStore $store,
+	TelemetryPresentation $view,
+	int $universe,
+	int $actor,
+	DateTimeZone $timezone,
+	int $now
+): array {
+	global $LNG;
+	$other = max(0, (int) ($_GET['other'] ?? 0));
+	if ($other === $actor) {
+		$other = 0;
+	}
+	$period = min(TelemetrySettings::DAILY_DAYS, max(1, (int) ($_GET['days'] ?? 7)));
+	$from = (new DateTimeImmutable('@' . $now))->setTimezone($timezone)->setTime(0, 0)
+		->modify('-' . ($period - 1) . ' days')->getTimestamp();
+	$account = [
+		'id' => $actor,
+		'other' => $other,
+		'period' => $period,
+		'players' => [],
+		'events' => [],
+		'start' => $view->date($from),
+		'end' => $view->date($now),
+	];
+	foreach (array_filter([$actor, $other]) as $accountId) {
+		$player = Database::get()->selectSingle(
+			'SELECT id,username FROM %%USERS%% WHERE universe=:universe AND id=:id',
+			[':universe' => $universe, ':id' => $accountId]
+		);
+		if (!$player) {
+			$player = ['id' => $accountId, 'username' => $LNG['telemetry_deleted_account']];
+		}
+		$counts = $store->actionCounts($universe, $accountId, $from, $now);
+		$player['activity'] = $view->activity($store->daily($universe, $accountId, $from), $from, $now);
+		$player['sends'] = $counts['fleet.send'] ?? 0;
+		$player['recalls'] = $counts['fleet.recall'] ?? 0;
+		$player['reads'] = $counts['galaxy.view'] ?? 0;
+		$player['pages'] = ($counts['interaction'] ?? 0) + ($counts['reload'] ?? 0)
+			+ ($counts['planet.switch'] ?? 0) + ($counts['alliance.view'] ?? 0);
+		$player['switches'] = $counts['planet.switch'] ?? 0;
+		$player['alliance'] = $counts['alliance.view'] ?? 0;
+		$player['reloads'] = $counts['passive'] ?? 0;
+		$player['network'] = $store->network($universe, $accountId, $from, $now);
+		foreach ($player['network']['rows'] as &$network) {
+			$network['client'] = $network['client'] === null ? null : TelemetryPresentation::client($network['client']);
+			$network['first_seen'] = $view->date((int) $network['first_seen']);
+			$network['last_seen'] = $view->date((int) $network['last_seen']);
+		}
+		unset($network);
+		$account['players'][] = $player;
+		$recent = $store->events($universe, $accountId, $from, 500, null, true);
+		$account['events'] = array_merge($account['events'], array_slice($recent, 0, 500));
+	}
+	// Show both accounts day by day in the heatmap.
+	$account['days'] = [];
+	foreach (array_keys($account['players'][0]['activity']['days']) as $date) {
+		foreach ($account['players'] as $player) {
+			$account['days'][] = ['actor' => $player['id'], 'name' => $player['username']] + $player['activity']['days'][$date];
+		}
+	}
+	$account['events'] = array_reverse($view->timeline($account['events']));
+	return $account;
+}
+
+function telemetryAccountIds(?array $case, array $account, array $warnings, array $accounts): array
+{
+	$ids = array_merge(array_column($accounts, 'account'), array_column($account['players'] ?? [], 'id'));
+	$events = $account['events'] ?? [];
+	foreach ($case['evaluations'] ?? [] as $evaluation) {
+		$events = array_merge($events, $evaluation['timeline']);
+	}
+	foreach ($events as $event) {
+		$ids[] = $event['actor'] ?? 0;
+		$ids[] = $event['target'] ?? 0;
+	}
+	foreach ($warnings as $warning) {
+		$ids[] = $warning['actor'];
+		$ids[] = $warning['other'];
+	}
+	if ($case) {
+		$ids[] = $case['actor'];
+		$ids[] = $case['other'];
+	}
+	return array_unique(array_filter(array_map('intval', $ids)));
+}
+
+function telemetryNames(int $universe, array $accountIds): array
+{
+	global $LNG;
+	if (!$accountIds) {
+		return [];
+	}
+	$players = Database::get()->select(
+		'SELECT id,username FROM %%USERS%% WHERE universe=:universe AND id IN (' . implode(',', $accountIds) . ')',
+		[':universe' => $universe]
+	);
+	$names = [];
+	foreach ($players as $player) {
+		$names[$player['id']] = $player['username'] . ' (' . $player['id'] . ')';
+	}
+	foreach ($accountIds as $accountId) {
+		$names[$accountId] ??= $LNG['telemetry_deleted_account'] . ' (' . $accountId . ')';
+	}
+	return $names;
+}
+
+function telemetrySettingsHistory(TelemetryStore $store, TelemetryPresentation $view, int $universe): array
+{
+	$history = $store->settingsHistory($universe);
+	foreach ($history as &$entry) {
+		$entry['date'] = $view->date((int) $entry['at']);
+		$entry['changes'] = [];
+		foreach (json_decode($entry['data'], true) as $name => $change) {
+			$before = TelemetryPresentation::setting($name, $change['before']);
+			$after = TelemetryPresentation::setting($name, $change['after']);
+			$entry['changes'][] = ['label' => TelemetryPresentation::label($name), 'value' => $before . ' → ' . $after];
+		}
+	}
+	unset($entry);
+	return $history;
+}
+
+function telemetryHealth(TelemetryPresentation $view, int $universe, array $settings): array
+{
+	global $LNG;
+	$health = TelemetryStore::health();
+	$analysis = $health['analysis_' . $universe] ?? [];
+	$megabytes = ' ' . $LNG['telemetry_unit_mb'];
+	$days = ' ' . $LNG['telemetry_unit_days'];
+
+	if (!$settings['enabled']) {
+		$collection = $LNG['telemetry_disabled'];
+	} elseif (empty($health['suspended'])) {
+		$collection = $LNG['telemetry_enabled'];
+	} elseif (TelemetryConnection::shared()) {
+		$collection = $LNG['telemetry_label_storage_full'];
+	} else {
+		$collection = $LNG['telemetry_label_storage_events'];
+	}
+	$allocated = $LNG['telemetry_measure_pending'];
+	if (isset($health['allocated_mb'])) {
+		$allocated = round($health['allocated_mb'], 1) . $megabytes . ' / ' . TelemetrySettings::BUDGET_MB . $megabytes;
+	}
+
+	$date = static fn($at, $none) => $at ? $view->date((int) $at) : $none;
+
+	$rows = [
+		['label' => $LNG['telemetry_collection'], 'value' => $collection],
+		['label' => $LNG['telemetry_last_write'], 'value' => $date($health['success'] ?? 0, $LNG['telemetry_none'])],
+		['label' => $LNG['telemetry_last_pass'], 'value' => $date($analysis['at'] ?? 0, $LNG['telemetry_none'])],
+		['label' => $LNG['telemetry_last_analysis'], 'value' => $date($analysis['completed_at'] ?? 0, $LNG['telemetry_none_female'])],
+		['label' => $LNG['telemetry_allocated'], 'value' => $allocated],
+		['label' => $LNG['telemetry_event_retention'], 'value' => TelemetrySettings::deliveryDays($settings) . $days],
+		['label' => $LNG['telemetry_network_retention'], 'value' => $settings['network_hours'] . ' ' . $LNG['telemetry_unit_hours']],
+		['label' => $LNG['telemetry_activity_retention'], 'value' => TelemetrySettings::DAILY_DAYS . $days],
+	];
+	if (!empty($health['failure'])) {
+		$failure = TelemetryPresentation::label($health['failure']);
+		if (isset($health['failed_at'])) {
+			$failure .= ' — ' . $view->date($health['failed_at']);
+		}
+		$rows[] = ['label' => $LNG['telemetry_collection_failure'], 'value' => $failure];
+	}
+	return $rows;
+}
+
+function telemetrySettingFields(array $settings): array
+{
+	$fields = [];
+	foreach (TelemetrySettings::definitions() as $key => $definition) {
+		$scale = TelemetrySettings::scale($definition);
+		$fields[$definition['group']][] = [
+			'key' => $key,
+			'value' => $settings[$key] * $scale,
+			'default' => $definition['default'] * $scale,
+			'min' => $definition['min'] * $scale,
+			'max' => $definition['max'] * $scale,
+			'unit' => TelemetrySettings::unitLabel($definition),
+			'checkbox' => $definition['unit'] === '0/1',
+			'label' => $definition['label'],
+			'help' => $definition['help'],
+			'step' => is_int($definition['default']) ? '1' : 'any',
+		];
+	}
+	return $fields;
 }

@@ -8,19 +8,18 @@ class TelemetryCronjob implements CronjobTask
 {
 	public function run()
 	{
-		if (!TelemetryConnection::masterEnabled()) {
-			return;
-		}
 		$health = TelemetryStore::health();
 		if (($health['retry_after'] ?? 0) > time()) {
 			return;
 		}
 		try {
 			$store = new TelemetryStore(TelemetryConnection::open());
-			// Retention uses the longest configured history; the quota is deployment-wide.
 			$all = array_map(static fn($u) => TelemetrySettings::get((int)$u), Universe::availableUniverses());
-			$settings = TelemetrySettings::storage($all);
-			$health = $store->maintenance($settings, time());
+			$health = $store->maintenance(
+				max(array_map([TelemetrySettings::class, 'deliveryDays'], $all)),
+				max(array_column($all, 'network_hours')),
+				time()
+			);
 			if (TelemetryConnection::shared() && !empty($health['suspended'])) {
 				return;
 			}
@@ -38,7 +37,7 @@ class TelemetryCronjob implements CronjobTask
 					$continue ? (int)$previous['pair_b'] : 0);
 			}
 		} catch (Throwable $e) {
-			TelemetryStore::health(['failure' => 'analysis_failed', 'retry_after' => time() + 60]);
+			TelemetryStore::health(['failure' => 'analysis_failed', 'failed_at' => time()]);
 			throw $e;
 		}
 	}
