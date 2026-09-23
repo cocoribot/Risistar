@@ -376,6 +376,9 @@ function telemetryHealth(TelemetryPresentation $view, int $universe, array $sett
 		}
 		$rows[] = ['label' => $LNG['telemetry_collection_failure'], 'value' => $failure];
 	}
+	if (($health['analysis_failed_at'] ?? 0) > ($analysis['at'] ?? 0)) {
+		$rows[] = ['label' => $LNG['telemetry_label_analysis_failed'], 'value' => $view->date((int) $health['analysis_failed_at'])];
+	}
 	return $rows;
 }
 

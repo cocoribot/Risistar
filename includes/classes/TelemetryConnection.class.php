@@ -37,7 +37,8 @@ final class TelemetryConnection
 		return $tables;
 	}
 
-	public static function open(): PDO
+	/** Each query may take at most $readTimeout seconds, so a stuck database cannot hold a request. */
+	public static function open(int $readTimeout = 30): PDO
 	{
 		$c = self::configuration();
 		foreach (['host', 'port', 'databasename', 'user', 'userpw'] as $key) {
@@ -46,7 +47,7 @@ final class TelemetryConnection
 			}
 		}
 		// A separate connection keeps telemetry out of game transactions, even in the same database.
-		$previous = ini_set('mysqlnd.net_read_timeout', '2');
+		$previous = ini_set('mysqlnd.net_read_timeout', (string) $readTimeout);
 		try {
 			$db = new PDO('mysql:host=' . $c['host'] . ';port=' . (int)$c['port']
 				. ';dbname=' . $c['databasename'] . ';charset=utf8mb4', $c['user'], $c['userpw'], [

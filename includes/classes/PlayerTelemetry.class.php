@@ -158,7 +158,8 @@ final class PlayerTelemetry
 			return;
 		}
 		try {
-			$store = new TelemetryStore(TelemetryConnection::open());
+			// Longer than a lock wait (1 to 2 s), so a busy row gives a lock error, not a lost connection.
+			$store = new TelemetryStore(TelemetryConnection::open(5));
 			foreach (array_chunk($events, self::WRITE_BATCH) as $batch) {
 				if (!$store->write($batch)) {
 					return;

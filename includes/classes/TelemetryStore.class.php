@@ -429,7 +429,7 @@ class TelemetryStore
 
 	/**
 	 * Whole database size, including free pages: DELETE alone does not give disk space back.
-	 * Tables in one shared file all report its free space, so it is added only once.
+	 * When all tables share one file, each of them reports its free space, so it is added once.
 	 * InnoDB updates these numbers by itself; ANALYZE TABLE would make player requests wait.
 	 */
 	private function allocatedMegabytes(): float
@@ -440,7 +440,8 @@ class TelemetryStore
 			$this->db->exec('SET SESSION information_schema_stats_expiry=0');
 		}
 		$bytes = $this->query(
-			'SELECT COALESCE(SUM(DATA_LENGTH+INDEX_LENGTH),0)+COALESCE(MAX(DATA_FREE),0) FROM information_schema.TABLES
+			'SELECT COALESCE(SUM(DATA_LENGTH+INDEX_LENGTH)+IF(@@innodb_file_per_table,SUM(DATA_FREE),MAX(DATA_FREE)),0)
+			FROM information_schema.TABLES
 			WHERE TABLE_SCHEMA=DATABASE()'
 		)->fetchColumn();
 		return (float) $bytes / 1048576;

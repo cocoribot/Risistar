@@ -239,6 +239,14 @@ class TelemetryCollectionTest extends TelemetryTestCase
         $this->assertSame('5:overview:', PlayerTelemetry::interaction(self::$senderId, 1, 5));
     }
 
+    public function testPlayerConnectionOutlastsALockWait(): void
+    {
+        // InnoDB ends a 1 s lock wait after 1 to 2 s.
+        $db = TelemetryConnection::open(5);
+
+        $this->assertSame(0, (int) $db->query('SELECT SLEEP(2.5)')->fetchColumn());
+    }
+
     public function testLockedDailyRowDoesNotPauseCollection(): void
     {
         $this->request(900001, 'interaction', time());

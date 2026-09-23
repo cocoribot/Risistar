@@ -2,6 +2,7 @@
 
 namespace Risistar\Tests\Integration;
 
+use PlayerTelemetry;
 use TelemetryConnection;
 use TelemetryCronjob;
 use TelemetryDetectors;
@@ -135,6 +136,25 @@ class TelemetryStoreTest extends TelemetryTestCase
 
         $this->assertEqualsWithDelta(time(), $analysis['at'], 5);
         $this->assertArrayHasKey('cursor', $analysis);
+    }
+
+    public function testFailedAnalysisDoesNotPauseCollection(): void
+    {
+        $table = trim(TelemetryConnection::tables()['%%TELEMETRY_WARNINGS%%'], '`');
+        $this->store->query("RENAME TABLE `{$table}` TO `{$table}_off`");
+        try {
+            (new TelemetryCronjob())->run();
+            $this->fail('The analysis should fail without its table.');
+        } catch (\PDOException $e) {
+        } finally {
+            $this->store->query("RENAME TABLE `{$table}_off` TO `{$table}`");
+        }
+
+        $this->resetCollector();
+        PlayerTelemetry::record(900001, 1, 'interaction', 0, 0, [], true);
+        PlayerTelemetry::flush();
+
+        $this->assertSame(['interaction' => 1], $this->store->actionCounts(1, 900001, time() - 60, time()));
     }
 
     public function testAnalysisResumesAfterTheLastCheckedAccount(): void

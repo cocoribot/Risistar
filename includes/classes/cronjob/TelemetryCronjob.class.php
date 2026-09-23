@@ -37,7 +37,8 @@ class TelemetryCronjob implements CronjobTask
 					$continue ? (int)$previous['pair_b'] : 0);
 			}
 		} catch (Throwable $e) {
-			TelemetryStore::health(['failure' => 'analysis_failed', 'failed_at' => time()]);
+			// Player writes go on; the admin page shows the failure until a pass works again.
+			TelemetryStore::health(['analysis_failed_at' => time()]);
 			throw $e;
 		}
 	}

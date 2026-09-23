@@ -139,6 +139,19 @@ class TelemetryAdminPageTest extends TelemetryTestCase
         $this->assertSame(pretty_number(500000), $rows['All-time exchange / Resources received in return']['deuterium']);
     }
 
+    public function testFailedAnalysisIsShownUntilTheNextPass(): void
+    {
+        $view = new TelemetryPresentation(new \DateTimeZone('UTC'));
+        TelemetryStore::health(['analysis_failed_at' => time() - 60, 'analysis_1' => ['at' => time() - 300]]);
+        $failed = array_column(telemetryHealth($view, 1, $this->settings), 'label');
+
+        TelemetryStore::health(['analysis_1' => ['at' => time()]]);
+        $passed = array_column(telemetryHealth($view, 1, $this->settings), 'label');
+
+        $this->assertContains('Analysis failed', $failed);
+        $this->assertNotContains('Analysis failed', $passed);
+    }
+
     public function testDeletedAccountsStayReadable(): void
     {
         $names = telemetryNames(1, [900001]);
