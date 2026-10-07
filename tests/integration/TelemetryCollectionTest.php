@@ -293,7 +293,7 @@ class TelemetryCollectionTest extends TelemetryTestCase
 
     public function testShortestAndLongestWaitAreStoredPerHour(): void
     {
-        $hour = strtotime('today UTC') + 2 * 3600;
+        $hour = gmmktime(0, 0, 0) + 2 * 3600;
         foreach ([0, 120, 400, 520] as $offset) {
             $this->request(900001, 'reload', $hour + $offset);
         }
@@ -306,7 +306,7 @@ class TelemetryCollectionTest extends TelemetryTestCase
     public function testFakeQueueReloadEveryMinuteIsFoundAsTiming(): void
     {
         // The reload marker comes from the browser, so a script can send it too.
-        $start = strtotime('today UTC') + 3600;
+        $start = gmmktime(0, 0, 0) + 3600;
         for ($i = 0; $i < 40; $i++) {
             $this->resetCollector();
             PlayerTelemetry::record(900001, 1, 'passive', 0, 0, [], false, $start + $i * 60);
@@ -340,7 +340,7 @@ class TelemetryCollectionTest extends TelemetryTestCase
     {
         mt_srand(3);
         for ($day = 3; $day >= 1; $day--) {
-            $midnight = strtotime('today UTC') - $day * 86400;
+            $midnight = gmmktime(0, 0, 0) - $day * 86400;
             // 01:00 to 04:30: faked queue reloads every 2 to 5 minutes.
             for ($at = $midnight + 3600; $at < $midnight + 4.5 * 3600; $at += mt_rand(120, 300)) {
                 $this->request(900001, 'passive', $at);

@@ -68,7 +68,7 @@ class TelemetryStoreTest extends TelemetryTestCase
 
     public function testOnlyPlayerActionsCountAsActivityTime(): void
     {
-        $at = strtotime('today UTC') - 1;
+        $at = gmmktime(0, 0, 0) - 1;
         $login = ['ip' => '192.0.2.55', 'client' => 'Firefox · Linux · desktop'] + $this->event(900001, $at, 'login');
         $send = ['ip' => '2001:db8::55', 'client' => 'Safari · iOS · mobile'] + $this->event(900001, $at + 2, 'fleet.send');
         $delivery = $this->event(900001, $at, 'delivery', 900002, ['metal' => 1000]);
