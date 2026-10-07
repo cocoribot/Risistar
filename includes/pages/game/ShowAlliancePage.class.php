@@ -727,6 +727,9 @@ class ShowAlliancePage extends AbstractGamePage
 		global $LNG;
 
 		$action		= HTTP::_GP('action', 'overview');
+		if ($action === '') {
+			$action	= 'overview';
+		}
 		$methodName	= 'admin'.ucwords($action);
 
 		if(!is_callable(array($this, $methodName))) {
@@ -739,6 +742,10 @@ class ShowAlliancePage extends AbstractGamePage
 	protected function adminOverview()
 	{
 		global $LNG;
+		if (!$this->rights['ADMIN']) {
+			$this->redirectToHome();
+		}
+
 		$send 		= HTTP::_GP('send', 0);
 		$textMode  	= HTTP::_GP('textMode', 'external');
 
@@ -954,10 +961,17 @@ class ShowAlliancePage extends AbstractGamePage
 		$postleader = HTTP::_GP('newleader', 0);
 		if (!empty($postleader))
 		{
-			$sql = "SELECT ally_rank_id FROM %%USERS%% WHERE id = :LeaderID;";
+			$sql = "SELECT u.ally_rank_id FROM %%USERS%% u INNER JOIN %%ALLIANCE_RANK%% r ON r.rankID = u.ally_rank_id AND r.allianceId = u.ally_id AND r.TRANSFER = 1 WHERE u.id = :LeaderID AND u.ally_id = :AllianceID AND u.id != :allianceOwner;";
 			$Rank = $db->selectSingle($sql, array(
-				':LeaderID'	=> $postleader
+				':LeaderID'	    => $postleader,
+				':AllianceID'   => $this->allianceData['id'],
+				':allianceOwner' => $this->allianceData['ally_owner']
 			));
+
+			if (empty($Rank))
+			{
+				$this->redirectToHome();
+			}
 
 			$sql = "UPDATE %%USERS%% SET ally_rank_id = :AllyRank WHERE id = :UserID;";
 			$db->update($sql, array(
@@ -980,7 +994,7 @@ class ShowAlliancePage extends AbstractGamePage
 		}
 		else
 		{
-			$sql = "SELECT u.id, r.rankName, u.username FROM %%USERS%% u INNER JOIN %%ALLIANCE_RANK%% r ON r.rankID = u.ally_rank_id AND r.TRANSFER = 1 WHERE u.ally_id = :allianceId AND id != :allianceOwner;";
+			$sql = "SELECT u.id, r.rankName, u.username FROM %%USERS%% u INNER JOIN %%ALLIANCE_RANK%% r ON r.rankID = u.ally_rank_id AND r.allianceId = u.ally_id AND r.TRANSFER = 1 WHERE u.ally_id = :allianceId AND id != :allianceOwner;";
 			$transferUserResult = $db->select($sql, array(
 				':allianceOwner'    => $this->allianceData['ally_owner'],
 				':allianceId'       => $this->allianceData['id']
@@ -1132,10 +1146,16 @@ class ShowAlliancePage extends AbstractGamePage
 		$answer		= HTTP::_GP('answer', '');
 		$applyID	= HTTP::_GP('id', 0);
 
-		$sql = "SELECT userId FROM %%ALLIANCE_REQUEST%% WHERE applyID = :applyID;";
+		$sql = "SELECT userId FROM %%ALLIANCE_REQUEST%% WHERE applyID = :applyID AND allianceId = :allianceId;";
 		$userId = $db->selectSingle($sql, array(
-			':applyID'	=> $applyID
+			':applyID'	=> $applyID,
+			':allianceId'	=> $this->allianceData['id']
 		), 'userId');
+
+		if (empty($userId))
+		{
+			$this->printMessage($LNG['al_apply_not_exists']);
+		}
 
 		if ($answer == 'yes')
 		{
