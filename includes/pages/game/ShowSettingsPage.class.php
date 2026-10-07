@@ -203,10 +203,10 @@ class ShowSettingsPage extends AbstractGamePage
 		$adminprotection	= HTTP::_GP('adminprotection', 0);
 		
 		$username			= HTTP::_GP('username', $USER['username'], UTF8_SUPPORT);
-		$password			= HTTP::_GP('password', '');
+		$password			= HTTP::_GP('password', '', true);
 		
-		$newpassword		= HTTP::_GP('newpassword', '');
-		$newpassword2		= HTTP::_GP('newpassword2', '');
+		$newpassword		= HTTP::_GP('newpassword', '', true);
+		$newpassword2		= HTTP::_GP('newpassword2', '', true);
 		
 		$email				= HTTP::_GP('email', $USER['email']);
 		

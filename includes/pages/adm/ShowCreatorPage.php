@@ -32,8 +32,8 @@ function ShowCreatorPage()
 			if ($_POST)
 			{
 				$UserName 	= HTTP::_GP('name', '', UTF8_SUPPORT);
-				$UserPass 	= HTTP::_GP('password', '');
-				$UserPass2 	= HTTP::_GP('password2', '');
+				$UserPass 	= HTTP::_GP('password', '', true);
+				$UserPass2 	= HTTP::_GP('password2', '', true);
 				$UserMail 	= HTTP::_GP('email', '');
 				$UserMail2	= HTTP::_GP('email2', '');
 				$UserAuth 	= HTTP::_GP('authlevel', 0);
