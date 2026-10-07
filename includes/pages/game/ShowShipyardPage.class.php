@@ -89,12 +89,17 @@ class ShowShipyardPage extends AbstractGamePage
 				continue;
 			}
 			
+			$BuildArray    	= !empty($PLANET['b_hangar_id']) ? unserialize($PLANET['b_hangar_id']) : array();
+			$maxBuildQueue	= Config::get()->max_elements_ships;
+			if ($maxBuildQueue != 0 && count($BuildArray) >= $maxBuildQueue) {
+				break;
+			}
+
 			$MaxElements 	= BuildFunctions::getMaxConstructibleElements($USER, $PLANET, $Element);
 			$Count			= is_numeric($Count) ? round($Count) : 0;
 			$Count 			= max(min($Count, Config::get()->max_fleet_per_build), 0);
 			$Count 			= min($Count, $MaxElements);
 			
-			$BuildArray    	= !empty($PLANET['b_hangar_id']) ? unserialize($PLANET['b_hangar_id']) : array();
 			if (in_array($Element, $reslist['missile']))
 			{
 				$MaxMissiles		= BuildFunctions::getMaxConstructibleRockets($USER, $PLANET, $Missiles);
