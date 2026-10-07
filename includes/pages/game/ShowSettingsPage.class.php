@@ -121,7 +121,17 @@ class ShowSettingsPage extends AbstractGamePage
 	
 	public function send()
 	{
-		global $USER;
+		global $USER, $LNG;
+		$delete		= HTTP::_GP('delete', 0);
+		$password	= HTTP::_GP('password', '', true);
+		if($delete == 1 && $USER['db_deaktjava'] == 0 && PlayerUtil::cryptPassword($password) != $USER['password'])
+		{
+			$this->printMessage($LNG['ov_wrong_pass'], array(array(
+				'label'	=> $LNG['sys_back'],
+				'url'	=> 'game.php?page=settings'
+			)));
+		}
+
 		if($USER['urlaubs_modus'] == 1) {
 			$this->sendVacation();
 		} else {
@@ -205,6 +215,8 @@ class ShowSettingsPage extends AbstractGamePage
 		
 		$planetSort			= HTTP::_GP('planetSort', 0);	
 		$planetOrder		= HTTP::_GP('planetOrder', 0);
+		$planetSort			= in_array($planetSort, array(0, 1, 2), true) ? $planetSort : 0;
+		$planetOrder		= in_array($planetOrder, array(0, 1), true) ? $planetOrder : 0;
 				
 		$theme				= HTTP::_GP('theme', $THEME->getThemeName());	
 	

@@ -13,6 +13,10 @@
 			<td><input name="delete" type="checkbox" value="1" {if $delete > 0}checked="checked"{/if}></td>
 		</tr>
 		<tr>
+			<td>{$LNG.op_old_pass}</td>
+			<td><input name="password" size="20" type="password" class="autocomplete"></td>
+		</tr>
+		<tr>
 			<td colspan="2"><input type="submit" value="{$LNG.op_save_changes}"></td>
 		</tr>
 	</table>
