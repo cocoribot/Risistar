@@ -100,10 +100,16 @@ class ShowTicketPage extends AbstractGamePage
 		} else {
 			$db = Database::get();
 
-			$sql = "SELECT status FROM %%TICKETS%% WHERE ticketID = :ticketID;";
+			$sql = "SELECT status FROM %%TICKETS%% WHERE ticketID = :ticketID AND ownerID = :userID;";
 			$ticketStatus = $db->selectSingle($sql, array(
-				':ticketID'	=> $ticketID
+				':ticketID'	=> $ticketID,
+				':userID'	=> $USER['id']
 			), 'status');
+
+			if ($ticketStatus === false)
+			{
+				$this->printMessage(sprintf($LNG['ti_not_exist'], $ticketID));
+			}
 
 			if ($ticketStatus == 2)
 			{
@@ -119,15 +125,16 @@ class ShowTicketPage extends AbstractGamePage
 	{
 		global $USER, $LNG;
 		
-		require 'includes/classes/BBCode.class.php';
+		require_once 'includes/classes/BBCode.class.php';
 
 		$db = Database::get();
 
 		$ticketID			= HTTP::_GP('id', 0);
 
-		$sql = "SELECT a.*, t.categoryID, t.status FROM %%TICKETS_ANSWER%% a INNER JOIN %%TICKETS%% t USING(ticketID) WHERE a.ticketID = :ticketID ORDER BY a.answerID;";
+		$sql = "SELECT a.*, t.categoryID, t.status FROM %%TICKETS_ANSWER%% a INNER JOIN %%TICKETS%% t USING(ticketID) WHERE a.ticketID = :ticketID AND t.ownerID = :userID ORDER BY a.answerID;";
 		$answerResult = $db->select($sql, array(
-			':ticketID'	=> $ticketID
+			':ticketID'	=> $ticketID,
+			':userID'	=> $USER['id']
 		));
 
 		$answerList			= array();

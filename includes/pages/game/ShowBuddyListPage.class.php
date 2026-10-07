@@ -119,7 +119,7 @@ class ShowBuddyListPage extends AbstractGamePage
 		$Friend_LNG = $LNG;
 		
 		if($USER['lang'] != $row['lang']){
-			$Friend_LNG = new Language($language);
+			$Friend_LNG = new Language($row['lang']);
 			$Friend_LNG->includeData(array('INGAME'));
 		}
 		
@@ -159,7 +159,7 @@ class ShowBuddyListPage extends AbstractGamePage
 				$Enemy_LNG = $LNG;
 				
 				if($USER['lang'] != $requestData['lang']){
-					$Enemy_LNG = new Language($language);
+					$Enemy_LNG = new Language($requestData['lang']);
 					$Enemy_LNG->includeData(array('INGAME'));
 				}
 
@@ -181,10 +181,16 @@ class ShowBuddyListPage extends AbstractGamePage
 		$id	= HTTP::_GP('id', 0);
 		$db = Database::get();
 
-        $sql = "DELETE FROM %%BUDDY_REQUEST%% WHERE id = :id;";
+        $sql = "DELETE r FROM %%BUDDY_REQUEST%% r INNER JOIN %%BUDDY%% b ON b.id = r.id WHERE r.id = :id AND b.owner = :userID;";
         $db->delete($sql, array(
-            ':id'       => $id
+            ':id'       => $id,
+            ':userID'   => $USER['id']
         ));
+
+		if($db->rowCount() == 0)
+		{
+			$this->redirectTo("game.php?page=buddyList");
+		}
 
         $sql = "SELECT sender, u.username, u.lang FROM %%BUDDY%% b INNER JOIN %%USERS%% u ON sender = u.id WHERE b.id = :id;";
         $sender = $db->selectSingle($sql, array(
@@ -194,7 +200,7 @@ class ShowBuddyListPage extends AbstractGamePage
 		$Friend_LNG = $LNG;
 		
 		if($USER['lang'] != $sender['lang']){
-			$Friend_LNG = new Language($language);
+			$Friend_LNG = new Language($sender['lang']);
 			$Friend_LNG->includeData(array('INGAME'));
 		}
 
