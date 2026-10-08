@@ -66,7 +66,6 @@ function getPlanets($USER)
 
 	switch($USER['planet_sort'])
 	{
-		case 0:
 		default:
 			$sql	.= 'id '.$order;
 			break;

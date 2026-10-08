@@ -902,6 +902,7 @@ $LNG['op_spy_probes_number_descrip']		= 'Cantidad de sondas de espionaje que ser
 $LNG['op_activate_vacation_mode_descrip']	= 'El modo vacaciones protege tu cuenta durante tu ausencia. Sólo podrá ser activada si no se está construyendo nada (flotas, edificios o defensas), nada está siendo investigado y ninguna de tus flotas está en movimiento. Una vez activada estás protegido contra ataques. Los ataques que esten en proceso finalizaran. Durante las vacaciones la producción se establece a cero y deberas devolverla al 100% cuando vuelvas a estar activo. El modo vacaciones dura como mínimo dos dias y solo se podra desactivar despues de ese tiempo.';
 $LNG['op_dlte_account_descrip']				= 'Si seleccionas ésta opcion, el sistema borrará tu cuenta automáticamente pasados 7 días.';
 $LNG['op_need_pass_mail']					= '¡Para cambiar la dirección de Correo Electrónico, es necesario introducir la contraseña!';
+$LNG['op_need_pass_delete']					= '¡Para eliminar tu cuenta, es necesario introducir tu contraseña actual!';
 $LNG['op_not_vaild_mail']                   = 'No tienes una dirección válida de correo electrónico.';
 $LNG['op_change_mail_exist']                = 'La dirección de correo electrónico %s ya está en uso.';
 $LNG['op_sort_normal']						= 'Orden de creación';
