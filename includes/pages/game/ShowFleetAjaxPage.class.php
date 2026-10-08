@@ -210,6 +210,8 @@ class ShowFleetAjaxPage extends AbstractGamePage
 
 		$shipID				= array_keys($fleetArray);
 
+		$PLANET['deuterium']	-= $consumption;
+
 		FleetFunctions::sendFleet($fleetArray, $targetMission, $USER['id'], $PLANET['id'], $PLANET['galaxy'],
 			$PLANET['system'], $PLANET['planet'], $PLANET['planet_type'], $targetData['id_owner'], $planetID,
 			$targetData['galaxy'], $targetData['system'], $targetData['planet'], $targetData['planet_type'],

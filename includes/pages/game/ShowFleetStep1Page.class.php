@@ -41,7 +41,7 @@ class ShowFleetStep1Page extends AbstractGamePage
 		{
 			$amount		 				= max(0, round(HTTP::_GP('ship'.$ShipID, 0.0, 0.0)));
 			
-			if ($amount < 1 || $ShipID == 212) continue;
+			if ($amount < 1 || FleetFunctions::GetFleetMaxSpeed($ShipID, $USER) <= 0) continue;
 
 			$Fleet[$ShipID]				= $amount;
 			$FleetRoom			   	   += $pricelist[$ShipID]['capacity'] * $amount;
