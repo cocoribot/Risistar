@@ -924,6 +924,7 @@ $LNG['op_spy_probes_number_descrip']		= 'Liczba sond wysyłanych bezpośrednio z
 $LNG['op_activate_vacation_mode_descrip']	= 'Tryb urlop podczas długiej nieobecności. By można aktywować nie możesz nic budować, odkrywać, a twoje floty muszą być nieaktywne. Tryb broni przed nowymi aktakami (tzn., że jeśli aktywujesz go podczas wrogiego ataku, to ten atak dojdzie do skutku, ale nie będzie można wysłać następnych). Urlop trwa co najmniej 2 dni. Podczas urlopu produkcja spada do 0!';
 $LNG['op_dlte_account_descrip']				= 'Jeśli to zaznaczysz, twoje konto zostanie automatycznie usunięte po 7 dniach.';
 $LNG['op_need_pass_mail']					= 'By zmienić adres e-mail musisz podać twoje hasło!';
+$LNG['op_need_pass_delete']					= 'By usunąć konto, musisz podać swoje aktualne hasło!';
 $LNG['op_not_vaild_mail']					= 'Błędny adres e-mail!';
 $LNG['op_change_mail_exist']				= 'Ten e-mail %s jest już używany!';
 $LNG['op_sort_normal']						= 'Kolejność tworzenia';

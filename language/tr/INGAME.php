@@ -925,6 +925,7 @@ $LNG['op_spy_probes_number_descrip']		= 'Her tarama sirasinda galaksi menusunden
 $LNG['op_activate_vacation_mode_descrip']	= 'Tatil modu, uzun sure giris yapmama durumunda size gelecek saldirilardan komumadir. Tatil moduna gecmek icin once bina, tersane, savunma ve arastirmada bir sey basmamak gerekir. Tatil moduna gecipte uzun bir sure giris olmadigi zaman account otomatik olarak silinir.';
 $LNG['op_dlte_account_descrip']			    = 'Kayit silme islemide 7 gun sonra kayit otomatik olarak silinecektir.';
 $LNG['op_need_pass_mail']                   = 'Email adresini degistirmek icin kutuya sifreni yazmalisin!';
+$LNG['op_need_pass_delete']                 = 'Hesabini silmek icin mevcut sifreni yazmalisin!';
 $LNG['op_not_vaild_mail']					= 'Gecersiz email adresi!';
 $LNG['op_change_mail_exist']				= 'Verilen email adresi %s azaten kullanimda!';
 $LNG['op_sort_normal']                      = 'Olusum Sirasina Gore';

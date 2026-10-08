@@ -912,6 +912,7 @@ $LNG['op_spy_probes_number_descrip']		= 'Number of probes you can send directly 
 $LNG['op_activate_vacation_mode_descrip']	= 'Vacation mode protects your account for as long as you are out of the game. But you can only activate it if its not you have nothing in construction (buildings, fleet, or defense), and nothing to be searched, and none of your fleets is destroyed. Once activated, is protected against attacks. Attacks that had already been posted before will continue during the holidays, the production is put at 0% so desativares vacation mode will reset the production to 100%. So ativares the holidays are bound to remain so for a minimum time of 48 hours. Only then will be disabled.';
 $LNG['op_dlte_account_descrip']			    = 'If you choose this option your account will be deleted after 7 days.';
 $LNG['op_need_pass_mail']                   = 'To change your email address is need to enter the password in the box!';
+$LNG['op_need_pass_delete']                 = 'To delete your account, you need to enter your current password!';
 $LNG['op_not_vaild_mail']					= 'You dont inserted a valid E-Mail!';
 $LNG['op_change_mail_exist']				= 'The Email introduced %s already in use!';
 $LNG['op_sort_normal']                      = 'By the Colonization';
