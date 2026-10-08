@@ -12,7 +12,6 @@ use Theme;
  */
 abstract class GamePageTestCase extends IntegrationTestCase
 {
-    protected array $users = [];
     protected array $assigned = [];
     protected ?string $displayed = null;
     private array $globals = [];
@@ -26,20 +25,11 @@ abstract class GamePageTestCase extends IntegrationTestCase
     protected function setUp(): void
     {
         $this->requireDatabase();
-        foreach (['USER', 'LNG', 'THEME', 'PLANET', 'resource', 'reslist', '_REQUEST', '_POST', '_GET'] as $name) {
+        foreach (['USER', 'LNG', 'THEME', 'PLANET', '_REQUEST', '_POST', '_GET'] as $name) {
             $this->globals[$name] = $GLOBALS[$name] ?? null;
         }
-        // vars.php is loaded inside a function by the bootstrap, so the resource entries are not global
-        $GLOBALS['resource'] += [901 => 'metal', 902 => 'crystal', 903 => 'deuterium', 911 => 'energy', 921 => 'darkmatter'];
-        $GLOBALS['reslist']['ressources'] = [901, 902, 903, 911, 921];
-        $GLOBALS['reslist']['resstype'] = [1 => [901, 902, 903], 2 => [911], 3 => [921]];
         self::$db->beginTransaction();
-        $this->users = self::$db->select('SELECT * FROM %%USERS%% WHERE authlevel = :level ORDER BY id ASC LIMIT 3;',
-            [':level' => 0]);
-        if (count($this->users) < 3) {
-            $this->markTestSkipped('The test database needs 3 players.');
-        }
-        $this->setUser($this->users[0]);
+        $this->setUser($this->players(1)[0]);
         $GLOBALS['THEME'] = new Theme();
         $GLOBALS['_REQUEST'] = $GLOBALS['_POST'] = $GLOBALS['_GET'] = [];
     }
@@ -59,6 +49,19 @@ abstract class GamePageTestCase extends IntegrationTestCase
         }
     }
 
+    /**
+     * The first players of the test database, or skip the test when there are fewer.
+     */
+    protected function players(int $count): array
+    {
+        $players = self::$db->select("SELECT * FROM %%USERS%% WHERE authlevel = :level ORDER BY id ASC LIMIT $count;",
+            [':level' => 0]);
+        if (count($players) < $count) {
+            $this->markTestSkipped("The test database needs $count players.");
+        }
+        return $players;
+    }
+
     protected function setUser(array $user): void
     {
         $GLOBALS['USER'] = $user;
@@ -69,8 +72,8 @@ abstract class GamePageTestCase extends IntegrationTestCase
     }
 
     /**
-     * Page without its constructor. display(), redirectTo() and printMessage() stop it
-     * like the real ones, which exit.
+     * Returns the page without running its constructor. display(), redirectTo() and printMessage()
+     * throw to stop the action, as the real ones exit. $methods are extra methods to stub.
      */
     protected function page(string $class, array $methods = [])
     {

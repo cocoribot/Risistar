@@ -122,11 +122,12 @@ class ShowSettingsPage extends AbstractGamePage
 	public function send()
 	{
 		global $USER, $LNG;
+
 		$delete		= HTTP::_GP('delete', 0);
 		$password	= HTTP::_GP('password', '', true);
 		if($delete == 1 && $USER['db_deaktjava'] == 0 && PlayerUtil::cryptPassword($password) != $USER['password'])
 		{
-			$this->printMessage($LNG['ov_wrong_pass'], array(array(
+			$this->printMessage($LNG['op_need_pass_delete'], array(array(
 				'label'	=> $LNG['sys_back'],
 				'url'	=> 'game.php?page=settings'
 			)));
