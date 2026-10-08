@@ -67,29 +67,29 @@ class ShowPhalanxPage extends AbstractGamePage
 		}
 
 		$db = Database::get();
-		$sql = "UPDATE %%PLANETS%% SET deuterium = deuterium - :phalanxDeuterium WHERE id = :planetID;";
-		$db->update($sql, array(
-			':phalanxDeuterium'	=> PHALANX_DEUTERIUM,
-			':planetID'			=> $PLANET['id']
-		));
-
 		$sql = "SELECT id, name, id_owner FROM %%PLANETS%% WHERE universe = :universe
-		AND galaxy = :galaxy AND `system` = :system AND planet = :planet AND :type;";
+		AND galaxy = :galaxy AND `system` = :system AND planet = :planet AND planet_type = :type;";
 		
 		$TargetInfo = $db->selectSingle($sql, array(
 			':universe'	=> Universe::current(),
 			':galaxy'	=> $Galaxy,
 			':system'	=> $System,
 			':planet'	=> $Planet,
-			':type'		=> 1
+			':type'		=> '1'
 		));
 
 		if(empty($TargetInfo))
 		{
 			$this->printMessage($LNG['px_out_of_range']);
 		}
+
+		$sql = "UPDATE %%PLANETS%% SET deuterium = deuterium - :phalanxDeuterium WHERE id = :planetID;";
+		$db->update($sql, array(
+			':phalanxDeuterium'	=> PHALANX_DEUTERIUM,
+			':planetID'			=> $PLANET['id']
+		));
 		
-		require 'includes/classes/class.FlyingFleetsTable.php';
+		require_once 'includes/classes/class.FlyingFleetsTable.php';
 
 		$fleetTableObj = new FlyingFleetsTable;
 		$fleetTableObj->setPhalanxMode();
