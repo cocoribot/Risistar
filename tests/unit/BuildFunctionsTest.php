@@ -16,7 +16,10 @@ class BuildFunctionsTest extends UnitTestCase
             902 => 'crystal',
             903 => 'deuterium',
             921 => 'darkmatter',
+            231 => 'space_shipyard',
+            239 => 'gilbert',
         ];
+        $GLOBALS['reslist']['one'] = [231];
     }
 
     public function testGetBonusListReturnsArray()
@@ -61,5 +64,32 @@ class BuildFunctionsTest extends UnitTestCase
     {
         $this->assertSame(11, BuildFunctions::displayedBuildingQueueLevel(11, 'build'));
         $this->assertSame(11, BuildFunctions::buildingLevelAfterQueueEntry(11, 'build'));
+    }
+
+    public function testQueuedGilbertsCountTowardTheLimit(): void
+    {
+        $planet = $this->planet(['gilbert' => 24997, 'b_hangar_id' => serialize([[239, 1], [202, 1], [239, 1]])]);
+
+        $this->assertSame(1, $this->maxElements($planet, 239));
+    }
+
+    public function testPlanetOverTheGilbertLimitGetsNoOrder(): void
+    {
+        $this->assertSame(0, $this->maxElements($this->planet(['gilbert' => 25001]), 239));
+    }
+
+    public function testUniqueUnitOnThePlanetGetsNoOrder(): void
+    {
+        $this->assertSame(0, $this->maxElements($this->planet(['space_shipyard' => 1]), 231));
+    }
+
+    private function planet(array $fields): array
+    {
+        return $fields + ['metal' => 1000000, 'gilbert' => 0, 'space_shipyard' => 0, 'b_hangar' => 0, 'b_hangar_id' => ''];
+    }
+
+    private function maxElements(array $planet, int $element): int
+    {
+        return (int) BuildFunctions::getMaxConstructibleElements(['darkmatter' => 0], $planet, $element, [901 => 1]);
     }
 }

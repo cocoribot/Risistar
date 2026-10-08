@@ -309,20 +309,19 @@ class BuildFunctions
         }
 
         if($Element == 239) {
-			$queuedElements = 0;
-			if(!empty($PLANET['b_hangar_id'])) {
-				foreach(unserialize($PLANET['b_hangar_id']) as $entry) {
-					if($entry[0] == 239) {
-						$queuedElements += $entry[1];
-					}
-				}
-			}
-			$maxElement[]	= max(0, 25000 - $PLANET[$resource[239]] - $queuedElements);
-        }
-        if($Element == 239) {
-			if($PLANET['b_hangar'] != 0) {
-				$maxElement[] = 0;
-			}
+            // Queued Gilberts count toward the 25000 limit, or several orders could pass it.
+            $queuedElements = 0;
+            if(!empty($PLANET['b_hangar_id'])) {
+                foreach(unserialize($PLANET['b_hangar_id']) as $entry) {
+                    if($entry[0] == 239) {
+                        $queuedElements += $entry[1];
+                    }
+                }
+            }
+            $maxElement[]	= max(0, 25000 - $PLANET[$resource[239]] - $queuedElements);
+            if($PLANET['b_hangar'] != 0) {
+                $maxElement[] = 0;
+            }
         }
         if(in_array($Element, $reslist['one'])) {
             $maxElement[]	= max(0, 1 - $PLANET[$resource[$Element]]);

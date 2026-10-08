@@ -80,6 +80,8 @@ class ShowShipyardPage extends AbstractGamePage
 			503	=> $PLANET[$resource[503]],
 		);
 
+		$maxBuildQueue	= Config::get()->max_elements_ships;
+
 		foreach($fmenge as $Element => $Count)
 		{
 			if(empty($Count)
@@ -90,8 +92,8 @@ class ShowShipyardPage extends AbstractGamePage
 			}
 			
 			$BuildArray    	= !empty($PLANET['b_hangar_id']) ? unserialize($PLANET['b_hangar_id']) : array();
-			$maxBuildQueue	= Config::get()->max_elements_ships;
-			if ($maxBuildQueue != 0 && count($BuildArray) >= $maxBuildQueue) {
+			if ($maxBuildQueue != 0 && count($BuildArray) >= $maxBuildQueue)
+			{
 				break;
 			}
 
@@ -117,9 +119,6 @@ class ShowShipyardPage extends AbstractGamePage
 				
 				if ($InBuild)
 					continue;
-
-				if($Count != 0 && $PLANET[$resource[$Element]] == 0 && $InBuild === false)
-					$Count =  1;
 			}
 
 			if(empty($Count))
