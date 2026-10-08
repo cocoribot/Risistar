@@ -37,6 +37,13 @@ class ShowInformationPage extends AbstractGamePage
 		global $PLANET, $USER, $resource, $LNG, $reslist;
 
 		$db = Database::get();
+		if ($PLANET['sprungtor'] < 1)
+		{
+			$this->sendJSON(array(
+				'message' => $LNG['in_jump_gate_doesnt_have_one'],
+				'error' => true
+			));
+		}
 
 		$NextJumpTime = self::getNextJumpWaitTime($PLANET['last_jump_time']);
 
@@ -56,7 +63,7 @@ class ShowInformationPage extends AbstractGamePage
 			':userID'   => $USER['id']
 		));
 
-		if (!isset($TargetGate) || $TargetPlanet == $PLANET['id'])
+		if (empty($TargetGate) || $TargetPlanet == $PLANET['id'])
 		{
 			$this->sendJSON(array(
 				'message' => $LNG['in_jump_gate_doesnt_have_one'],
