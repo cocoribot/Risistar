@@ -3,12 +3,14 @@
 namespace Risistar\Tests\Integration;
 
 use ShowNotesPage;
+use Universe;
 
 /**
  * Integration tests for note ownership on the notes page.
  */
 class NotesOwnershipTest extends GamePageTestCase
 {
+    private array $users = [];
     private int $noteId = 0;
 
     public static function setUpBeforeClass(): void
@@ -20,8 +22,9 @@ class NotesOwnershipTest extends GamePageTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        self::$db->insert('INSERT INTO %%NOTES%% SET owner = :owner, universe = 1, time = :time, priority = 1, title = :title, text = :text;',
-            [':owner' => $this->users[0]['id'], ':time' => TIMESTAMP, ':title' => 'Private title', ':text' => 'Private text']);
+        $this->users = $this->players(2);
+        self::$db->insert('INSERT INTO %%NOTES%% SET owner = :owner, universe = :universe, time = :time, priority = 1, title = :title, text = :text;',
+            [':owner' => $this->users[0]['id'], ':universe' => Universe::current(), ':time' => TIMESTAMP, ':title' => 'Private title', ':text' => 'Private text']);
         $this->noteId = self::$db->lastInsertId();
         $GLOBALS['_REQUEST'] = ['id' => $this->noteId, 'title' => 'Changed', 'text' => 'Changed', 'priority' => 2];
     }

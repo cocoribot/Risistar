@@ -10,6 +10,7 @@ use Universe;
  */
 class BattleReportAccessTest extends GamePageTestCase
 {
+    private array $users = [];
     private string $reportId = '';
 
     public static function setUpBeforeClass(): void
@@ -21,6 +22,7 @@ class BattleReportAccessTest extends GamePageTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->users = $this->players(3);
         $this->reportId = md5('battle-report-access-test');
         self::$db->insert('INSERT INTO %%RW%% (rid, raport, time, attacker, defender) VALUES (:id, :report, :time, :attacker, :defender);', [
             ':id' => $this->reportId,

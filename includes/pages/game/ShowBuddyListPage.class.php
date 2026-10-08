@@ -143,7 +143,7 @@ class ShowBuddyListPage extends AbstractGamePage
 
 		if($isAllowed)
 		{
-			$sql = "SELECT COUNT(*) as count FROM %%BUDDY_REQUEST%% WHERE :id;";
+			$sql = "SELECT COUNT(*) as count FROM %%BUDDY_REQUEST%% WHERE id = :id;";
             $isRequest = $db->selectSingle($sql, array(
                 ':id'  => $id
             ), 'count');
@@ -187,10 +187,10 @@ class ShowBuddyListPage extends AbstractGamePage
             ':userID'   => $USER['id']
         ));
 
-		if($db->rowCount() == 0)
-		{
-			$this->redirectTo("game.php?page=buddyList");
-		}
+        if($db->rowCount() == 0)
+        {
+            $this->redirectTo("game.php?page=buddyList");
+        }
 
         $sql = "SELECT sender, u.username, u.lang FROM %%BUDDY%% b INNER JOIN %%USERS%% u ON sender = u.id WHERE b.id = :id;";
         $sender = $db->selectSingle($sql, array(

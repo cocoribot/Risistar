@@ -11,6 +11,7 @@ use SupportTickets;
  */
 class TicketOwnershipTest extends GamePageTestCase
 {
+    private array $users = [];
     private int $ticketId = 0;
 
     public static function setUpBeforeClass(): void
@@ -23,6 +24,7 @@ class TicketOwnershipTest extends GamePageTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->users = $this->players(2);
         $tickets = new SupportTickets();
         $this->ticketId = $tickets->createTicket($this->users[0]['id'], 1, 'Private ticket');
         $tickets->createAnswer($this->ticketId, $this->users[0]['id'], $this->users[0]['username'],

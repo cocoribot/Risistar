@@ -108,7 +108,10 @@ class ShowTicketPage extends AbstractGamePage
 
 			if ($ticketStatus === false)
 			{
-				$this->printMessage(sprintf($LNG['ti_not_exist'], $ticketID));
+				$this->printMessage(sprintf($LNG['ti_not_exist'], $ticketID), array(array(
+					'label'	=> $LNG['sys_back'],
+					'url'	=> 'game.php?page=ticket'
+				)));
 			}
 
 			if ($ticketStatus == 2)
