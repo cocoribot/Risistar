@@ -96,6 +96,26 @@ class SettingsPageTest extends GamePageTestCase
         }
     }
 
+    public function testNewPasswordWithAccentsCanBeUsedToLogIn(): void
+    {
+        $GLOBALS['USER']['password'] = PlayerUtil::cryptPassword('ancien-mot-de-passe');
+
+        $this->sendSettings([
+            'password' => 'ancien-mot-de-passe',
+            'newpassword' => 'étoile-à-noël',
+            'newpassword2' => 'étoile-à-noël',
+        ]);
+
+        $this->assertTrue(password_verify('étoile-à-noël', $this->savedUser()['password']));
+    }
+
+    public function testCurrentPasswordWithAccentsIsAccepted(): void
+    {
+        $this->sendSettings(['password' => self::PASSWORD, 'newpassword' => 'nouveau', 'newpassword2' => 'nouveau']);
+
+        $this->assertTrue(password_verify('nouveau', $this->savedUser()['password']));
+    }
+
     private function setDeletion(int $vacation, int $scheduled): void
     {
         $GLOBALS['USER']['urlaubs_modus'] = $vacation;
